@@ -1,38 +1,79 @@
 # Smart Second Brain
 
-An intelligent search plugin for Obsidian that uses AI embeddings and vector search to help you find relevant notes using natural language queries.
+An intelligent RAG (Retrieval-Augmented Generation) plugin for Obsidian that transforms your vault into an AI-powered knowledge assistant. Ask questions in natural language and get answers with sources, powered by local or cloud AI models.
 
 ## Features
+
+### 💬 **RAG-Powered Q&A**
+- **Ask a Question**: Natural language queries with streaming AI answers
+- **Source Attribution**: Every answer includes clickable links to source notes
+- **Markdown Rendering**: Beautiful formatted answers with headers, lists, code blocks, and more
+- **Save to Vault**: Export Q&A sessions as notes in `QnA/` folder with YAML frontmatter
+- **Stage-Specific Messages**: Real-time feedback showing search and generation phases
+
+### 🤖 **Multi-Provider AI Support**
+- **Ollama (Local)**: Completely offline, privacy-first
+  - Models: llama3, mistral, phi, gemma, qwen
+  - Embeddings: snowflake-arctic-embed, nomic-embed-text
+  - No API key required
+- **OpenAI (Cloud)**: Industry-leading models
+  - Models: GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo
+  - Embeddings: text-embedding-3-small, text-embedding-3-large
+  - Requires API key
+- **Anthropic (Cloud)**: Claude models with 200K context
+  - Models: Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku
+  - Embeddings: Voyage AI (voyage-2, voyage-large-2)
+  - Requires Anthropic + Voyage API keys
 
 ### 🔍 **Advanced Search Capabilities**
 - **Full-text Search (BM25)**: Fast keyword-based search with intelligent boosting for note titles, paths, and tags
 - **Vector Search**: Semantic search using AI embeddings to find conceptually similar content
-- **Hybrid Search**: Combines both approaches for the best of both worlds
+- **Hybrid Search**: Combines both approaches for the best of both worlds (recommended)
 
 ### 🧠 **Intelligent Indexing**
 - Automatically indexes your vault on startup
 - Incremental updates when you create, modify, or delete notes
 - Smart chunking with overlap for better context preservation
 - Caches embeddings to avoid re-processing unchanged documents
+- Dimension validation prevents mixing incompatible models
 
 ### 🎨 **User Interface**
-- **Search Modal**: Compact search interface that expands with results
-- **Side Panel Icons**:
-  - 🧠 Brain icon - Shows indexing status
-  - 🔍 Search icon - Opens search modal
+- **RAG Modal**: Beautiful Q&A interface with real-time streaming
+  - Fixed question header and button footer
+  - Scrollable answer section with markdown rendering
+  - Copy to clipboard and save as note buttons
+  - Stage indicators (searching → thinking → answering)
+- **Search Modal**: Document retrieval interface (testing/debugging)
+- **Ribbon Icons**:
+  - 🧠 Brain icon - Shows indexing status and document count
+  - 🔍 Search icon - Opens vector search modal
 - **Live Status Updates**: Real-time indexing progress in settings
 
 ### ⚙️ **Flexible Configuration**
 - Multiple search modes (fulltext, vector, hybrid)
-- Adjustable similarity thresholds
-- Configurable chunk sizes
-- Support for multiple embedding models
-- Dynamic dimension detection from Ollama API
+- Adjustable similarity and fulltext thresholds
+- Top-K results configuration (1-20)
+- Temperature control for LLM creativity (0-2)
+- Provider switching with full settings per provider
+- File exclusion patterns (glob-based)
 
 ## Prerequisites
 
+Choose **one** of the following:
+
+### Option 1: Local (Privacy-First)
 - [Ollama](https://ollama.com/) installed and running locally
-- An embedding model pulled in Ollama (e.g., `ollama pull snowflake-arctic-embed:335m`)
+- An embedding model: `ollama pull snowflake-arctic-embed:335m`
+- A generation model: `ollama pull llama3`
+
+### Option 2: OpenAI
+- OpenAI API key from [platform.openai.com](https://platform.openai.com)
+- ~$0.03 per 1000 questions (GPT-4o-mini)
+
+### Option 3: Anthropic Claude
+- Anthropic API key from [console.anthropic.com](https://console.anthropic.com)
+- Voyage AI API key from [voyageai.com](https://www.voyageai.com)
+- ~$0.02 per 1000 questions (Claude Haiku)
 
 ## Installation
 
@@ -59,19 +100,22 @@ An intelligent search plugin for Obsidian that uses AI embeddings and vector sea
 
 1. **Initial Setup**
    - Open Settings → Smart Second Brain
-   - Verify Ollama URL (default: http://localhost:11434)
-   - Select your embedding model
-   - Click "Reload Models" to fetch available models from Ollama
+   - Select your AI provider (Ollama, OpenAI, or Anthropic)
+   - Configure provider settings (URL/API keys)
+   - Choose your models (generation + embedding)
+   - Click "Test Provider Connection" to verify
 
 2. **First Index**
    - The plugin will automatically index your vault on first load
-   - Watch the status bar for progress (🧠 icon in left sidebar)
-   - Indexing time depends on vault size and embedding model speed
+   - Watch the 🧠 brain icon in left sidebar for progress
+   - Indexing time depends on vault size (~10-30 seconds per 100 notes)
 
-3. **Search Your Notes**
-   - Click the 🔍 search icon in the sidebar, OR
-   - Use Command Palette: "Test Search Query"
-   - Type natural language queries like "workflow documentation" or "meeting notes about project"
+3. **Ask Questions**
+   - Press `Cmd/Ctrl + P` → "Ask a Question"
+   - Type your question: "What are my project goals?"
+   - Watch answer stream in with sources
+   - Click "💾 Save as Note" to export to `QnA/` folder
+   - Click sources to jump to relevant notes
 
 ## Search Modes
 
@@ -95,28 +139,46 @@ Best for: Balanced results combining both approaches
 
 ## Commands
 
-- **Test Search Query**: Opens the search modal
-- **Rebuild Vector Store**: Re-indexes all documents from scratch
-- **Show Vector Store Info**: Displays index statistics
-- **Switch Search Mode to [mode]**: Quickly change search modes
-- **Test Provider Connection**: Verify Ollama is working
+### RAG Commands
+- **Ask a Question**: Opens RAG modal for natural language Q&A with streaming answers
+- **Test Provider Connection**: Verify your AI provider is working correctly
+
+### Search Commands
+- **Test Search Query**: Opens vector search modal (for debugging/testing)
+- **Switch Search Mode to Full-text (BM25)**: Use keyword search
+- **Switch Search Mode to Vector (Semantic)**: Use AI similarity search
+- **Switch Search Mode to Hybrid (BM25 + Vector)**: Use both (recommended)
+
+### Index Management
+- **Rebuild Vector Store**: Re-indexes all documents (keeps settings)
+- **Show Vector Store Info**: Displays document count, dimensions, and stats
 
 ## Settings
 
 ### Provider Settings
-- **Ollama URL**: Connection endpoint for Ollama (default: localhost:11434)
-- **Embedding Model**: Model used for generating embeddings
-- **Generation Model**: Model for future RAG features
+- **Active Provider**: Choose Ollama, OpenAI, or Anthropic
+- **Provider-Specific Settings**: Dynamic settings based on selected provider
+  - **Ollama**: URL, generation model, embedding model
+  - **OpenAI**: API key, generation model, embedding model
+  - **Anthropic**: API key, Claude model, Voyage AI key, Voyage embedding model
+- **Model Reload**: Fetch available models from provider
 
-### Search Settings
+### RAG Settings
 - **Search Mode**: Choose between fulltext, vector, or hybrid
-- **Similarity Threshold**: Minimum score for vector search results (0-1)
-- **Fulltext Threshold**: Minimum score for BM25 results (0-1)
+- **Similarity Threshold**: Minimum score for vector search (0-1, default 0.8)
+- **Fulltext Threshold**: Minimum score for BM25 search (0-1, default 0)
+- **Top-K Results**: Number of documents to retrieve (1-20, default 5)
+- **Temperature**: LLM creativity (0-2, default 0.7)
 
 ### Vector Store Management
-- **Index Status**: Live document count and indexing state
+- **Index Status**: Live document count and indexing state (updates every 2 seconds)
 - **Clear & Rebuild Index**: Deletes vector store and rebuilds from scratch
-- **Rebuild Index**: Quick rebuild without clearing
+- **Quick Rebuild**: Re-indexes without clearing (faster)
+
+### Advanced
+- **Exclude Patterns**: Glob patterns to exclude files (e.g., `Archive/**`)
+- **Verbose Logging**: Enable detailed console logs for debugging
+- **Incognito Mode**: Force local-only processing (future feature)
 
 ## Architecture
 
@@ -139,15 +201,19 @@ Best for: Balanced results combining both approaches
 - Handles exclusion patterns
 
 **Providers** (`src/providers/`)
-- **OllamaProvider**: Local embedding and LLM provider
-- Dynamic dimension detection via Ollama API
-- Supports multiple embedding models
+- **BaseProvider**: Abstract interface for all providers
+- **OllamaProvider**: Local embedding and LLM provider (fully offline)
+- **OpenAIProvider**: Cloud-based with GPT models and text-embedding-3
+- **AnthropicProvider**: Claude models with Voyage AI embeddings
+- Dynamic dimension detection and validation
+- Streaming support for real-time responses
 
 ### Data Flow
 
 1. **Indexing**: Document → Chunking → Embedding → Vector Store → Disk
 2. **Search**: Query → Embedding → Vector/BM25 Search → Ranked Results
-3. **Updates**: File Change → Re-embed → Update Store → Save
+3. **RAG Query**: Query → Retrieve Docs → Format Context → LLM Stream → Answer + Sources
+4. **Updates**: File Change → Re-embed → Update Store → Auto-save (debounced 30s)
 
 ## Development
 
@@ -187,10 +253,14 @@ src/
 
 ### Key Technologies
 
-- **Obsidian API**: Plugin framework
-- **Orama v2.1.1**: Vector and full-text search engine
-- **TypeScript**: Type-safe development
-- **Ollama**: Local LLM and embedding provider
+- **Obsidian API**: Plugin framework and markdown rendering
+- **Orama v2.1.1**: Vector and full-text search engine (hybrid search)
+- **TypeScript 5.8**: Type-safe development
+- **Ollama**: Local LLM and embedding provider (privacy-first)
+- **OpenAI API**: Cloud-based GPT models and embeddings
+- **Anthropic API**: Claude models for generation
+- **Voyage AI**: Embedding service for Anthropic
+- **esbuild**: Fast bundling and compilation
 
 ## Troubleshooting
 
@@ -232,13 +302,34 @@ src/
 
 ## Roadmap
 
-- [ ] RAG-powered Q&A with sources
-- [ ] Chat interface for conversational search
-- [ ] Support for OpenAI and Anthropic providers
+### Phase 1 - Foundation ✅ COMPLETE
+- [x] RAG-powered Q&A with sources
+- [x] Streaming answers with markdown rendering
+- [x] Multi-provider support (Ollama, OpenAI, Anthropic)
+- [x] Save Q&A to vault with YAML frontmatter
+- [x] Vector + BM25 + Hybrid search modes
+- [x] Real-time indexing with file watchers
+
+### Phase 2 - Enhanced UX (Next)
+- [ ] Conversation history (multi-turn chat)
+- [ ] Follow-up questions with context
+- [ ] Chat threads view/management
+- [ ] Improved source display with previews
+- [ ] Query suggestions based on vault content
+
+### Phase 3 - Advanced Features
 - [ ] Advanced filtering (date ranges, tags, folders)
-- [ ] Search history and saved queries
-- [ ] Export search results
-- [ ] Batch re-indexing optimizations
+- [ ] Search history and bookmarked queries
+- [ ] Export conversations as markdown
+- [ ] Custom system prompts per folder
+- [ ] Batch operations and optimizations
+
+### Future Ideas
+- [ ] Mobile support (iOS/Android)
+- [ ] Graph view integration (show related notes)
+- [ ] Voice input for questions
+- [ ] Suggested questions based on recent edits
+- [ ] Plugin API for extensibility
 
 ## Contributing
 
