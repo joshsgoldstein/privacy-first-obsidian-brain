@@ -249,8 +249,9 @@ export default class SmartSecondBrainPlugin extends Plugin {
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
-		// Validate and fix provider setting (reset to ollama if not implemented)
-		if (this.settings.activeProvider !== 'ollama') {
+		// Validate provider setting
+		const validProviders = ['ollama', 'openai', 'anthropic'];
+		if (!validProviders.includes(this.settings.activeProvider)) {
 			console.log(`Invalid provider '${this.settings.activeProvider}' detected, resetting to Ollama`);
 			this.settings.activeProvider = 'ollama';
 			await this.saveData(this.settings);

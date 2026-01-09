@@ -25,6 +25,10 @@ export interface Settings {
 	anthropicApiKey: string;
 	anthropicModel: string;
 
+	// Voyage AI settings (for Anthropic embeddings)
+	voyageApiKey: string;
+	voyageEmbeddingModel: string;
+
 	// RAG parameters
 	searchMode: 'fulltext' | 'vector' | 'hybrid'; // Orama search mode
 	similarityThreshold: number; // 0-1, for vector/hybrid search (default 0.8)
@@ -170,6 +174,7 @@ export interface ProviderConfig {
 	baseUrl?: string;
 	model?: string;
 	embeddingModel?: string;
+	embeddingApiKey?: string; // For providers that use separate embedding service (e.g., Anthropic + Voyage AI)
 	temperature?: number;
 	maxTokens?: number;
 }

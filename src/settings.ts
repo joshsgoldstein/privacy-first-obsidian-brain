@@ -24,6 +24,10 @@ export const DEFAULT_SETTINGS: Settings = {
 	anthropicApiKey: '',
 	anthropicModel: 'claude-3-5-sonnet-20241022',
 
+	// Voyage AI (for Anthropic embeddings)
+	voyageApiKey: '',
+	voyageEmbeddingModel: 'voyage-2',
+
 	// RAG parameters
 	searchMode: 'fulltext',
 	similarityThreshold: 0.8,
@@ -95,12 +99,12 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('AI Provider')
-			.setDesc('Choose your AI provider (OpenAI and Anthropic coming soon)')
+			.setDesc('Choose your AI provider')
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOption('ollama', 'Ollama (Local)')
-					// .addOption('openai', 'OpenAI') // TODO: Coming in Phase 1 Step 11
-					// .addOption('anthropic', 'Anthropic Claude') // TODO: Coming in Phase 1 Step 11
+					.addOption('openai', 'OpenAI')
+					.addOption('anthropic', 'Anthropic Claude')
 					.setValue(this.plugin.settings.activeProvider)
 					.onChange(async (value) => {
 						this.plugin.settings.activeProvider = value as 'ollama' | 'openai' | 'anthropic';
@@ -289,10 +293,39 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 						})
 				);
 
+			containerEl.createEl('h4', { text: 'Voyage AI Embeddings' });
 			containerEl.createEl('p', {
-				text: 'Note: Anthropic does not provide embedding models. We use OpenAI embeddings instead.',
+				text: 'Note: Anthropic does not provide embedding models. We use Voyage AI for embeddings.',
 				cls: 'setting-item-description',
 			});
+
+			new Setting(containerEl)
+				.setName('Voyage API Key')
+				.setDesc('Your Voyage AI API key for embeddings')
+				.addText((text) =>
+					text
+						.setPlaceholder('pa-...')
+						.setValue(this.plugin.settings.voyageApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.voyageApiKey = value;
+							await this.plugin.saveSettings();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName('Embedding Model')
+				.setDesc('Voyage AI embedding model')
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption('voyage-2', 'voyage-2 (Recommended)')
+						.addOption('voyage-large-2', 'voyage-large-2')
+						.addOption('voyage-code-2', 'voyage-code-2')
+						.setValue(this.plugin.settings.voyageEmbeddingModel)
+						.onChange(async (value) => {
+							this.plugin.settings.voyageEmbeddingModel = value;
+							await this.plugin.saveSettings();
+						})
+				);
 		}
 
 		// ====================================================================
