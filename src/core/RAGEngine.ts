@@ -191,6 +191,12 @@ export class RAGEngine {
 				console.log('Scores:', results.map((r) => r.score));
 			}
 
+			// Yield status: search complete, now generating
+			yield {
+				type: 'status',
+				status: 'generating',
+			};
+
 			// 3. Generate response (streaming)
 			for await (const chunk of this.provider.generateStream(question, context, {
 				temperature,

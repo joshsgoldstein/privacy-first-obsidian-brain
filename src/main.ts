@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { MarkdownRenderer, Modal, Notice, Plugin, Setting, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, SmartSecondBrainSettingTab } from './settings';
 import { createProvider } from './providers';
 import { RAGEngine } from './core/RAGEngine';
@@ -60,6 +60,19 @@ export default class SmartSecondBrainPlugin extends Plugin {
 			name: 'Test Provider Connection',
 			callback: async () => {
 				await this.testProvider();
+			},
+		});
+
+		this.addCommand({
+			id: 'ask-question',
+			name: 'Ask a Question',
+			callback: async () => {
+				// Prompt for question
+				const question = await this.promptForQuestion();
+				if (!question) return;
+
+				// Open answer modal and stream response
+				await this.showAnswerModal(question);
 			},
 		});
 
@@ -226,6 +239,284 @@ export default class SmartSecondBrainPlugin extends Plugin {
 				}
 			})
 		);
+	}
+
+	/**
+	 * Show answer modal with streaming response
+	 */
+	private async showAnswerModal(question: string): Promise<void> {
+		const modal = new Modal(this.app);
+		modal.titleEl.setText('🧠 Smart Second Brain');
+
+		// Add styling
+		modal.modalEl.addClass('rag-answer-modal');
+
+		// Fixed Question section at top
+		const questionSection = modal.contentEl.createDiv('rag-question-section');
+		const questionEl = questionSection.createDiv('rag-question');
+		questionEl.createEl('h3', { text: 'Question' });
+		questionEl.createDiv({ text: question, cls: 'rag-question-text' });
+
+		// Scrollable Answer section in middle
+		const scrollableContent = modal.contentEl.createDiv('rag-scrollable-content');
+		const answerContainer = scrollableContent.createDiv('rag-answer');
+		const answerEl = answerContainer.createDiv('rag-answer-content');
+
+		// Stage 1: Searching the index
+		answerEl.setText('🔍 Searching through your notes...');
+
+		// Create fixed button footer with buttons visible immediately
+		const buttonFooter = modal.contentEl.createDiv('rag-button-footer');
+
+		// Left side buttons
+		const leftButtons = buttonFooter.createDiv('rag-button-left');
+		const saveButton = leftButtons.createEl('button', { text: '💾 Save as Note' });
+		saveButton.disabled = true; // Disable until answer is ready
+
+		// Right side buttons
+		const rightButtons = buttonFooter.createDiv('rag-button-right');
+		const copyButton = rightButtons.createEl('button', { text: '📋 Copy' });
+		copyButton.disabled = true; // Disable until answer is ready
+
+		const closeButton = rightButtons.createEl('button', { text: 'Close' });
+		closeButton.addEventListener('click', () => modal.close());
+
+		modal.open();
+
+		try {
+			let answer = '';
+			let sources: any[] = [];
+			let hasStartedStreaming = false;
+
+			// Run RAG pipeline (retrieve + generate)
+			for await (const chunk of this.ragEngine.query(question)) {
+				if (chunk.type === 'status') {
+					// Status update from RAG engine
+					if (chunk.status === 'generating') {
+						answerEl.setText('🤔 Thinking about your question...');
+					}
+				} else if (chunk.type === 'content') {
+					// Clear status message on first content chunk
+					if (!hasStartedStreaming) {
+						answerEl.empty();
+						hasStartedStreaming = true;
+					}
+
+					answer += chunk.content;
+
+					// Render markdown (re-render on each chunk for streaming effect)
+					answerEl.empty();
+					await MarkdownRenderer.render(
+						this.app,
+						answer,
+						answerEl,
+						'',
+						this
+					);
+				} else if (chunk.type === 'sources') {
+					sources = chunk.sources;
+				} else if (chunk.type === 'error') {
+					answerEl.empty();
+					answerEl.createEl('p', {
+						text: `❌ Error: ${chunk.error}`,
+						cls: 'rag-error',
+					});
+					return;
+				}
+			}
+
+			// Enable buttons now that answer is complete
+			saveButton.disabled = false;
+			copyButton.disabled = false;
+
+			// Add button click handlers
+			saveButton.addEventListener('click', async () => {
+				await this.saveAnswerAsNote(question, answer, sources);
+				modal.close();
+			});
+
+			copyButton.addEventListener('click', () => {
+				navigator.clipboard.writeText(answer);
+				new Notice('Answer copied to clipboard!');
+			});
+		} catch (error) {
+			console.error('RAG query error:', error);
+			answerEl.empty();
+			answerEl.createEl('p', {
+				text: `❌ Failed: ${(error as Error).message}`,
+				cls: 'rag-error',
+			});
+		}
+	}
+
+	/**
+	 * Save RAG answer as a note in the vault
+	 */
+	private async saveAnswerAsNote(question: string, answer: string, sources: any[]): Promise<void> {
+		// Generate default filename from question (sanitize for file system)
+		const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+		const questionSlug = question
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-|-$/g, '')
+			.substring(0, 50);
+		const defaultName = `${timestamp}-${questionSlug}`;
+
+		// Prompt for filename
+		const filename = await this.promptForFilename(defaultName);
+		if (!filename) return;
+
+		// Format note content with YAML frontmatter
+		const now = new Date();
+		const noteContent = `---
+title: "${question}"
+type: rag-answer
+tags:
+  - smart-brain
+  - ai-generated
+provider: ${this.settings.activeProvider}
+search_mode: ${this.settings.searchMode}
+created: ${now.toISOString()}
+sources: ${sources.length}
+---
+
+# ${question}
+
+${answer}
+`;
+
+		// Determine save location (QnA folder)
+		const folder = 'QnA';
+		const filePath = `${folder}/${filename}.md`;
+
+		try {
+			// Create QnA folder if it doesn't exist
+			const folderExists = this.app.vault.getAbstractFileByPath(folder);
+			if (!folderExists) {
+				await this.app.vault.createFolder(folder);
+			}
+
+			// Create the note
+			const file = await this.app.vault.create(filePath, noteContent);
+
+			// Show success message and open the note
+			new Notice(`✅ Saved to ${filePath}`);
+			await this.app.workspace.openLinkText(filePath, '', false);
+		} catch (error) {
+			console.error('Failed to save note:', error);
+			new Notice(`❌ Failed to save: ${(error as Error).message}`);
+		}
+	}
+
+	/**
+	 * Prompt user for a filename
+	 */
+	private async promptForFilename(defaultName: string): Promise<string | null> {
+		return new Promise((resolve) => {
+			const modal = new Modal(this.app);
+			modal.titleEl.setText('Save Answer as Note');
+
+			let inputEl: HTMLInputElement;
+
+			new Setting(modal.contentEl)
+				.setName('Filename')
+				.setDesc('Enter a name for this note (without .md extension)')
+				.addText((text) => {
+					text.setValue(defaultName);
+					inputEl = text.inputEl;
+
+					// Submit on Enter
+					text.inputEl.addEventListener('keydown', (e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							const filename = inputEl.value.trim();
+							modal.close();
+							resolve(filename || null);
+						}
+					});
+
+					// Auto-focus and select all
+					setTimeout(() => {
+						text.inputEl.focus();
+						text.inputEl.select();
+					}, 10);
+				})
+				.addButton((button) =>
+					button
+						.setButtonText('Save')
+						.setCta()
+						.onClick(() => {
+							const filename = inputEl.value.trim();
+							modal.close();
+							resolve(filename || null);
+						})
+				);
+
+			// Cancel button
+			new Setting(modal.contentEl).addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => {
+					modal.close();
+					resolve(null);
+				})
+			);
+
+			modal.open();
+		});
+	}
+
+	/**
+	 * Prompt user for a question using a modal
+	 */
+	private async promptForQuestion(): Promise<string | null> {
+		return new Promise((resolve) => {
+			const modal = new Modal(this.app);
+			modal.titleEl.setText('Ask a Question');
+
+			let inputEl: HTMLInputElement;
+
+			new Setting(modal.contentEl)
+				.setName('Your question')
+				.setDesc('Ask anything about your notes')
+				.addText((text) => {
+					text.setPlaceholder('e.g., What are my main project goals?');
+
+					// Store reference to input element
+					inputEl = text.inputEl;
+
+					// Submit on Enter
+					text.inputEl.addEventListener('keydown', (e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							const question = inputEl.value.trim();
+							modal.close();
+							resolve(question || null);
+						}
+					});
+
+					// Auto-focus
+					setTimeout(() => text.inputEl.focus(), 10);
+				})
+				.addButton((button) =>
+					button
+						.setButtonText('Ask')
+						.setCta()
+						.onClick(() => {
+							const question = inputEl.value.trim();
+							modal.close();
+							resolve(question || null);
+						})
+				);
+
+			// Cancel button
+			new Setting(modal.contentEl).addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => {
+					modal.close();
+					resolve(null);
+				})
+			);
+
+			modal.open();
+		});
 	}
 
 	/**

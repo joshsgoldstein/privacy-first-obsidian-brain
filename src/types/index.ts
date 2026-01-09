@@ -227,6 +227,10 @@ export type StreamChunk =
 			sources: Source[]; // Sources at the end
 	  }
 	| {
+			type: 'status';
+			status: 'searching' | 'generating'; // Pipeline status
+	  }
+	| {
 			type: 'error';
 			error: string; // Error message
 	  };
