@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+	"id": "smart-second-brain",
+	"name": "Smart Second Brain",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "Intelligent search using AI embeddings and vector search. Find notes using natural language with BM25, semantic, and hybrid search modes. Powered by local Ollama.",
+	"author": "Josh Goldstein",
+	"authorUrl": "https://github.com/joshsgoldstein",
+	"isDesktopOnly": true
 }

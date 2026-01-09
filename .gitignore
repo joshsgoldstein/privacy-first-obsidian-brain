@@ -1,5 +1,5 @@
 # vscode
-.vscode 
+.vscode
 
 # Intellij
 *.iml
@@ -17,6 +17,17 @@ main.js
 
 # obsidian
 data.json
+
+# Vector store (large file, user-specific)
+vectorstore.json
+
+# Planning docs (optional - uncomment if you don't want these in repo)
+# PRODUCT_REQUIREMENTS.md
+# TECHNICAL_SPEC.md
+# NEXT_STEPS.md
+# FEATURE_IDEAS.md
+# DEPENDENCIES.md
+# claude.md
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store

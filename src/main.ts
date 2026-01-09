@@ -1,99 +1,322 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { Notice, Plugin, TFile } from 'obsidian';
+import { DEFAULT_SETTINGS, SmartSecondBrainSettingTab } from './settings';
+import { createProvider } from './providers';
+import { RAGEngine } from './core/RAGEngine';
+import { SearchModal } from './ui/SearchModal';
+import type { Settings } from './types';
 
-// Remember to rename these classes and interfaces!
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+/**
+ * Smart Second Brain Plugin
+ * Phase 1: Testing basic setup
+ */
+export default class SmartSecondBrainPlugin extends Plugin {
+	settings: Settings;
+	private statusBarItem: HTMLElement;
+	private ragEngine: RAGEngine;
+	private saveTimer: NodeJS.Timeout | null = null;
 
 	async onload() {
+		console.log('Loading Smart Second Brain plugin...');
+
+		// Load settings
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		// Add status bar item
+		this.statusBarItem = this.addStatusBarItem();
+		this.statusBarItem.setText('🧠 Initializing...');
+
+		// Initialize RAG Engine
+		// Use the actual plugin folder (obsidian-sample-plugin) not the manifest ID
+		const pluginDir = this.app.vault.configDir + '/plugins/obsidian-sample-plugin';
+		this.ragEngine = new RAGEngine(this.app, this.settings, pluginDir);
+		await this.ragEngine.initialize();
+
+		// Add ribbon icons
+		// Brain icon - shows status
+		this.addRibbonIcon('brain', 'Smart Second Brain Status', () => {
+			const status = this.ragEngine.getStatus();
+			new Notice(
+				`Smart Second Brain\n` +
+					`Documents: ${status.documentCount}\n` +
+					`Status: ${status.isIndexing ? 'Indexing...' : status.isReady ? 'Ready' : 'Not ready'}`,
+				5000
+			);
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		// Search icon - opens search modal
+		this.addRibbonIcon('search', 'Search Knowledge Base', () => {
+			new SearchModal(this.app, this.ragEngine).open();
+		});
 
-		// This adds a simple command that can be triggered anywhere
+		// Add settings tab
+		this.addSettingTab(new SmartSecondBrainSettingTab(this.app, this));
+
+		// Setup file change listeners for automatic indexing
+		this.setupFileWatchers();
+
+		// Add commands
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
+			id: 'test-provider',
+			name: 'Test Provider Connection',
+			callback: async () => {
+				await this.testProvider();
+			},
+		});
+
+		this.addCommand({
+			id: 'rebuild-index',
+			name: 'Rebuild Vector Store',
+			callback: async () => {
+				await this.ragEngine.rebuild();
+			},
+		});
+
+		this.addCommand({
+			id: 'show-vector-store-info',
+			name: 'Show Vector Store Info',
+			callback: async () => {
+				const info = await this.ragEngine.vectorStore.exportInfo();
+				new Notice(info, 10000);
+				console.log(info);
+			},
+		});
+
+		this.addCommand({
+			id: 'test-search',
+			name: 'Test Search Query',
 			callback: () => {
-				new SampleModal(this.app).open();
-			}
+				new SearchModal(this.app, this.ragEngine).open();
+			},
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
+
 		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
+			id: 'switch-to-fulltext',
+			name: 'Switch Search Mode to Full-text (BM25)',
+			callback: async () => {
+				this.settings.searchMode = 'fulltext';
+				await this.saveSettings();
+				new Notice('✅ Search mode: Full-text (BM25)', 3000);
+			},
 		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
+
 		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
+			id: 'switch-to-vector',
+			name: 'Switch Search Mode to Vector (Semantic)',
+			callback: async () => {
+				this.settings.searchMode = 'vector';
+				await this.saveSettings();
+				new Notice('✅ Search mode: Vector (Semantic)', 3000);
+			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
+		this.addCommand({
+			id: 'switch-to-hybrid',
+			name: 'Switch Search Mode to Hybrid (BM25 + Vector)',
+			callback: async () => {
+				this.settings.searchMode = 'hybrid';
+				await this.saveSettings();
+				new Notice('✅ Search mode: Hybrid (BM25 + Vector)', 3000);
+			},
 		});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		// Update status bar periodically
+		this.registerInterval(
+			window.setInterval(() => {
+				this.updateStatusBar();
+			}, 5000) // Update every 5 seconds
+		);
 
+		// Auto-save vector store every 5 minutes
+		this.registerInterval(
+			window.setInterval(async () => {
+				await this.ragEngine.save();
+			}, 5 * 60 * 1000) // 5 minutes
+		);
+
+		// Initial status update
+		this.updateStatusBar();
+
+		console.log('Smart Second Brain plugin loaded!');
 	}
 
 	onunload() {
+		console.log('Unloading Smart Second Brain plugin...');
+
+		// Clear save timer
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+		}
 	}
 
+	/**
+	 * Update status bar with current state
+	 */
+	private updateStatusBar(): void {
+		if (!this.ragEngine) {
+			this.statusBarItem.setText('🧠 Initializing...');
+			return;
+		}
+
+		const status = this.ragEngine.getStatus();
+		const providerName =
+			this.settings.activeProvider === 'ollama'
+				? 'Ollama'
+				: this.settings.activeProvider === 'openai'
+					? 'OpenAI'
+					: 'Claude';
+
+		if (status.isIndexing) {
+			this.statusBarItem.setText(`🧠 Indexing... (${providerName})`);
+		} else if (status.isReady) {
+			this.statusBarItem.setText(`🧠 ${status.documentCount} docs (${providerName})`);
+		} else {
+			this.statusBarItem.setText(`🧠 Not ready (${providerName})`);
+		}
+
+		// Click to show detailed info
+		this.statusBarItem.onclick = async () => {
+			const info = await this.ragEngine.vectorStore.exportInfo();
+			new Notice(info, 10000);
+		};
+	}
+
+	/**
+	 * Setup file change listeners for automatic indexing
+	 */
+	private setupFileWatchers(): void {
+		// Watch for file creation
+		this.registerEvent(
+			this.app.vault.on('create', (file) => {
+				if (file instanceof TFile && file.extension === 'md') {
+					this.ragEngine.updateDocument(file);
+					this.debouncedSave();
+				}
+			})
+		);
+
+		// Watch for file modification
+		this.registerEvent(
+			this.app.vault.on('modify', (file) => {
+				if (file instanceof TFile && file.extension === 'md') {
+					this.ragEngine.updateDocument(file);
+					this.debouncedSave();
+				}
+			})
+		);
+
+		// Watch for file deletion
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				if (file instanceof TFile && file.extension === 'md') {
+					this.ragEngine.removeDocument(file);
+					this.debouncedSave();
+				}
+			})
+		);
+
+		// Watch for file rename (appears as delete + create)
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				if (file instanceof TFile && file.extension === 'md') {
+					// Remove old document
+					this.ragEngine.removeDocument({ path: oldPath } as TFile);
+					// Add new document
+					this.ragEngine.updateDocument(file);
+					this.debouncedSave();
+				}
+			})
+		);
+	}
+
+	/**
+	 * Debounced save for vector store
+	 * Waits 30 seconds after last change before saving
+	 */
+	private debouncedSave(): void {
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+		}
+
+		this.saveTimer = setTimeout(async () => {
+			await this.ragEngine.save();
+			this.saveTimer = null;
+		}, 30000); // 30 seconds
+	}
+
+	/**
+	 * Load settings from disk
+	 */
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+
+		// Validate and fix provider setting (reset to ollama if not implemented)
+		if (this.settings.activeProvider !== 'ollama') {
+			console.log(`Invalid provider '${this.settings.activeProvider}' detected, resetting to Ollama`);
+			this.settings.activeProvider = 'ollama';
+			await this.saveData(this.settings);
+		}
+
+		// Fix common embedding model issues
+		if (this.settings.ollamaEmbeddingModel === 'nomic-embed-text') {
+			console.log('Updating embedding model from nomic-embed-text to snowflake-arctic-embed:335m');
+			this.settings.ollamaEmbeddingModel = 'snowflake-arctic-embed:335m';
+			await this.saveData(this.settings);
+		}
 	}
 
+	/**
+	 * Save settings to disk
+	 */
 	async saveSettings() {
 		await this.saveData(this.settings);
-	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+		// Update RAG Engine with new settings
+		if (this.ragEngine) {
+			await this.ragEngine.updateSettings(this.settings);
+		}
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	/**
+	 * Test provider connection
+	 * This is useful for debugging
+	 */
+	async testProvider() {
+		new Notice(`Testing ${this.settings.activeProvider} connection...`);
+
+		try {
+			// Create provider based on current settings
+			const provider = createProvider(this.settings);
+
+			// Validate connection
+			const error = await provider.validate();
+
+			if (error) {
+				new Notice(`❌ Error: ${error}`, 10000);
+				console.error('Provider validation failed:', error);
+				return;
+			}
+
+			new Notice(`✅ ${provider.name} connected successfully!`, 5000);
+
+			// List available models
+			const models = await provider.listModels();
+			console.log('Available models:', models);
+
+			if (models.length > 0) {
+				new Notice(`Found ${models.length} models`, 3000);
+			}
+
+			// Test embedding (if you have Ollama running)
+			if (this.settings.activeProvider === 'ollama') {
+				new Notice('Testing embedding...', 2000);
+				const embedding = await provider.embed('Hello world');
+				console.log('Embedding dimensions:', embedding.length);
+				new Notice(`✅ Embedding works! (${embedding.length} dimensions)`, 3000);
+			}
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			new Notice(`❌ Provider test failed: ${errorMessage}`, 10000);
+			console.error('Provider test error:', error);
+		}
 	}
 }

@@ -1,8 +1,101 @@
-/*
+/* Smart Second Brain Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* Search Modal - Compact by default, expands with results */
+.smart-brain-search-modal {
+	width: 450px;
+	max-width: 90vw;
+}
 
-If your plugin does not need CSS, delete this file.
+.smart-brain-search-modal.has-results {
+	width: 800px;
+	max-width: 90vw;
+	transition: width 0.3s ease;
+}
 
-*/
+.smart-brain-search-modal .setting-item {
+	border: none;
+	padding: 12px 0;
+}
+
+.smart-brain-search-modal .setting-item-control {
+	flex-grow: 1;
+}
+
+.smart-brain-search-modal .setting-item-control input[type="text"] {
+	width: 100%;
+}
+
+.smart-brain-search-modal .setting-item-control button {
+	margin-left: 0;
+}
+
+.search-results-container {
+	margin-top: 20px;
+	max-height: 500px;
+	overflow-y: auto;
+}
+
+.search-loading {
+	text-align: center;
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.search-error {
+	color: var(--text-error);
+	padding: 10px;
+	background: var(--background-modifier-error);
+	border-radius: 4px;
+}
+
+.search-no-results {
+	text-align: center;
+	color: var(--text-muted);
+	padding: 20px;
+}
+
+/* Results List */
+.search-results-list {
+	margin-top: 10px;
+}
+
+.search-result-item {
+	padding: 12px;
+	margin-bottom: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.search-result-item:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
+.search-result-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+.search-result-path {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.search-result-score {
+	font-size: 0.9em;
+	color: var(--text-muted);
+	background: var(--background-secondary);
+	padding: 2px 8px;
+	border-radius: 12px;
+}
+
+.search-result-content {
+	color: var(--text-muted);
+	font-size: 0.9em;
+	line-height: 1.4;
+	margin: 0;
+}

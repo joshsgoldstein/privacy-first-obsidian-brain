@@ -1,36 +1,675 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "./main";
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import type SmartSecondBrainPlugin from './main';
+import type { Settings } from './types';
 
-export interface MyPluginSettings {
-	mySetting: string;
-}
+/**
+ * Default settings for the plugin
+ * These are used on first install
+ */
+export const DEFAULT_SETTINGS: Settings = {
+	// Provider
+	activeProvider: 'ollama',
 
-export const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+	// Ollama (local)
+	ollamaUrl: 'http://localhost:11434',
+	ollamaModel: 'llama3:latest',
+	ollamaEmbeddingModel: 'snowflake-arctic-embed:335m',
 
-export class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	// OpenAI (cloud)
+	openaiApiKey: '',
+	openaiModel: 'gpt-4o',
+	openaiEmbeddingModel: 'text-embedding-3-small',
 
-	constructor(app: App, plugin: MyPlugin) {
+	// Anthropic (cloud)
+	anthropicApiKey: '',
+	anthropicModel: 'claude-3-5-sonnet-20241022',
+
+	// RAG parameters
+	searchMode: 'fulltext',
+	similarityThreshold: 0.8,
+	fulltextThreshold: 0,
+	topK: 5,
+	temperature: 0.7,
+
+	// UI
+	viewMode: 'comfy',
+	chatFolder: 'Chats',
+
+	// Privacy
+	incognitoMode: false,
+
+	// Exclusions
+	excludePatterns: ['Archive/**', 'Templates/**'],
+
+	// Advanced
+	verboseLogging: false,
+};
+
+/**
+ * Settings tab in Obsidian settings
+ * This creates the UI for configuring the plugin
+ */
+export class SmartSecondBrainSettingTab extends PluginSettingTab {
+	plugin: SmartSecondBrainPlugin;
+	private ollamaModels: string[] = [];
+	private ollamaEmbeddingModels: string[] = [];
+	private statusInterval: number | null = null;
+
+	constructor(app: App, plugin: SmartSecondBrainPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
-	display(): void {
-		const {containerEl} = this;
+	hide() {
+		// Clean up interval when settings are closed
+		if (this.statusInterval) {
+			window.clearInterval(this.statusInterval);
+			this.statusInterval = null;
+		}
+	}
 
+	async display(): Promise<void> {
+		const { containerEl } = this;
 		containerEl.empty();
 
+		// Get RAG engine reference for use throughout settings
+		const ragEngine = (this.plugin as any).ragEngine;
+
+		// Header
+		containerEl.createEl('h2', { text: 'Smart Second Brain Settings' });
+
+		// Load Ollama models in background (non-blocking)
+		if (this.plugin.settings.activeProvider === 'ollama' && this.ollamaModels.length === 0) {
+			this.loadOllamaModels().then(() => {
+				// Silently refresh dropdowns after models load
+				// Only if we're still on Ollama provider
+				if (this.plugin.settings.activeProvider === 'ollama') {
+					this.display();
+				}
+			});
+		}
+
+		// ====================================================================
+		// Provider Selection
+		// ====================================================================
+
 		new Setting(containerEl)
-			.setName('Settings #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
+			.setName('AI Provider')
+			.setDesc('Choose your AI provider (OpenAI and Anthropic coming soon)')
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('ollama', 'Ollama (Local)')
+					// .addOption('openai', 'OpenAI') // TODO: Coming in Phase 1 Step 11
+					// .addOption('anthropic', 'Anthropic Claude') // TODO: Coming in Phase 1 Step 11
+					.setValue(this.plugin.settings.activeProvider)
+					.onChange(async (value) => {
+						this.plugin.settings.activeProvider = value as 'ollama' | 'openai' | 'anthropic';
+						await this.plugin.saveSettings();
+						this.display(); // Refresh to show relevant settings
+					})
+			);
+
+		// ====================================================================
+		// Ollama Settings (only show if active)
+		// ====================================================================
+
+		if (this.plugin.settings.activeProvider === 'ollama') {
+			containerEl.createEl('h3', { text: 'Ollama Settings' });
+
+			// Ollama URL with reload button
+			new Setting(containerEl)
+				.setName('Ollama URL')
+				.setDesc('URL of your Ollama server (default: http://localhost:11434)')
+				.addText((text) =>
+					text
+						.setPlaceholder('http://localhost:11434')
+						.setValue(this.plugin.settings.ollamaUrl)
+						.onChange(async (value) => {
+							this.plugin.settings.ollamaUrl = value;
+							await this.plugin.saveSettings();
+						})
+				)
+				.addButton((button) =>
+					button
+						.setButtonText('Reload Models')
+						.setTooltip('Refresh model list from Ollama')
+						.onClick(async () => {
+							button.setButtonText('Loading...');
+							button.setDisabled(true);
+							await this.loadOllamaModels();
+							this.display(); // Refresh the entire settings UI
+							button.setButtonText('Reload Models');
+							button.setDisabled(false);
+						})
+				);
+
+			// Generation Model dropdown
+			new Setting(containerEl)
+				.setName('Generation Model')
+				.setDesc('Model for generating responses')
+				.addDropdown((dropdown) => {
+					// Add available models
+					if (this.ollamaModels.length > 0) {
+						this.ollamaModels.forEach((model) => {
+							dropdown.addOption(model, model);
+						});
+					} else {
+						// Fallback if no models loaded
+						dropdown.addOption(this.plugin.settings.ollamaModel, this.plugin.settings.ollamaModel);
+					}
+
+					dropdown
+						.setValue(this.plugin.settings.ollamaModel)
+						.onChange(async (value) => {
+							this.plugin.settings.ollamaModel = value;
+							await this.plugin.saveSettings();
+						});
+				});
+
+			// Embedding Model dropdown
+			new Setting(containerEl)
+				.setName('Embedding Model')
+				.setDesc('Model for creating embeddings')
+				.addDropdown((dropdown) => {
+					// Add available embedding models
+					if (this.ollamaEmbeddingModels.length > 0) {
+						this.ollamaEmbeddingModels.forEach((model) => {
+							dropdown.addOption(model, model);
+						});
+					} else {
+						// Fallback if no models loaded
+						dropdown.addOption(
+							this.plugin.settings.ollamaEmbeddingModel,
+							this.plugin.settings.ollamaEmbeddingModel
+						);
+					}
+
+					dropdown
+						.setValue(this.plugin.settings.ollamaEmbeddingModel)
+						.onChange(async (value) => {
+							this.plugin.settings.ollamaEmbeddingModel = value;
+							await this.plugin.saveSettings();
+						});
+				});
+
+			// Show helpful message if no models found
+			if (this.ollamaModels.length === 0) {
+				const noModelsEl = containerEl.createEl('p', {
+					text: 'No models found. Make sure Ollama is running and models are installed.',
+					cls: 'setting-item-description',
+				});
+				noModelsEl.style.color = 'var(--text-error)';
+			}
+		}
+
+		// ====================================================================
+		// OpenAI Settings (only show if active)
+		// ====================================================================
+
+		if (this.plugin.settings.activeProvider === 'openai') {
+			containerEl.createEl('h3', { text: 'OpenAI Settings' });
+
+			new Setting(containerEl)
+				.setName('API Key')
+				.setDesc('Your OpenAI API key (starts with sk-)')
+				.addText((text) =>
+					text
+						.setPlaceholder('sk-...')
+						.setValue(this.plugin.settings.openaiApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.openaiApiKey = value;
+							await this.plugin.saveSettings();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName('Model')
+				.setDesc('OpenAI model to use')
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption('gpt-3.5-turbo', 'GPT-3.5 Turbo')
+						.addOption('gpt-4', 'GPT-4')
+						.addOption('gpt-4-turbo', 'GPT-4 Turbo')
+						.addOption('gpt-4o', 'GPT-4o')
+						.setValue(this.plugin.settings.openaiModel)
+						.onChange(async (value) => {
+							this.plugin.settings.openaiModel = value;
+							await this.plugin.saveSettings();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName('Embedding Model')
+				.setDesc('Model for creating embeddings')
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption('text-embedding-3-small', 'text-embedding-3-small (Recommended)')
+						.addOption('text-embedding-3-large', 'text-embedding-3-large')
+						.addOption('text-embedding-ada-002', 'text-embedding-ada-002 (Legacy)')
+						.setValue(this.plugin.settings.openaiEmbeddingModel)
+						.onChange(async (value) => {
+							this.plugin.settings.openaiEmbeddingModel = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		// ====================================================================
+		// Anthropic Settings (only show if active)
+		// ====================================================================
+
+		if (this.plugin.settings.activeProvider === 'anthropic') {
+			containerEl.createEl('h3', { text: 'Anthropic Claude Settings' });
+
+			new Setting(containerEl)
+				.setName('API Key')
+				.setDesc('Your Anthropic API key')
+				.addText((text) =>
+					text
+						.setPlaceholder('sk-ant-...')
+						.setValue(this.plugin.settings.anthropicApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.anthropicApiKey = value;
+							await this.plugin.saveSettings();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName('Model')
+				.setDesc('Claude model to use')
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet (Recommended)')
+						.addOption('claude-3-opus-20240229', 'Claude 3 Opus')
+						.addOption('claude-3-haiku-20240307', 'Claude 3 Haiku')
+						.setValue(this.plugin.settings.anthropicModel)
+						.onChange(async (value) => {
+							this.plugin.settings.anthropicModel = value;
+							await this.plugin.saveSettings();
+						})
+				);
+
+			containerEl.createEl('p', {
+				text: 'Note: Anthropic does not provide embedding models. We use OpenAI embeddings instead.',
+				cls: 'setting-item-description',
+			});
+		}
+
+		// ====================================================================
+		// RAG Parameters
+		// ====================================================================
+
+		containerEl.createEl('h3', { text: 'RAG Parameters' });
+
+		// Search Mode
+		new Setting(containerEl)
+			.setName('Search Mode')
+			.setDesc('How to find relevant notes: Full-text (BM25), Vector (semantic), or Hybrid (both)')
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('fulltext', 'Full-text (BM25) - Keyword matching')
+					.addOption('vector', 'Vector - Semantic similarity')
+					.addOption('hybrid', 'Hybrid - Best of both (Recommended)')
+					.setValue(this.plugin.settings.searchMode)
+					.onChange(async (value) => {
+						this.plugin.settings.searchMode = value as 'fulltext' | 'vector' | 'hybrid';
+						await this.plugin.saveSettings();
+						this.display(); // Refresh to show/hide relevant settings
+					})
+			);
+
+		// Show similarity threshold for vector/hybrid modes
+		if (this.plugin.settings.searchMode === 'vector' || this.plugin.settings.searchMode === 'hybrid') {
+			new Setting(containerEl)
+				.setName('Similarity Threshold')
+				.setDesc('Minimum similarity score for vector search (0-1, default 0.8)')
+				.addSlider((slider) =>
+					slider
+						.setLimits(0, 1, 0.05)
+						.setValue(this.plugin.settings.similarityThreshold)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							this.plugin.settings.similarityThreshold = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		// Show fulltext threshold for fulltext/hybrid modes
+		if (this.plugin.settings.searchMode === 'fulltext' || this.plugin.settings.searchMode === 'hybrid') {
+			new Setting(containerEl)
+				.setName('Full-text Match Threshold')
+				.setDesc('Percentage of search terms that must match (0 = any term, 1 = all terms)')
+				.addSlider((slider) =>
+					slider
+						.setLimits(0, 1, 0.1)
+						.setValue(this.plugin.settings.fulltextThreshold)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							this.plugin.settings.fulltextThreshold = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		new Setting(containerEl)
+			.setName('Number of Results (k)')
+			.setDesc('How many notes to retrieve (1-20)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, 20, 1)
+					.setValue(this.plugin.settings.topK)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.topK = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Temperature')
+			.setDesc('LLM creativity (0 = focused, 1 = creative, 2 = very creative)')
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 2, 0.1)
+					.setValue(this.plugin.settings.temperature)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.temperature = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// ====================================================================
+		// Vector Store Management
+		// ====================================================================
+
+		containerEl.createEl('h3', { text: 'Vector Store Management' });
+
+		// Show current index status with auto-update
+		if (ragEngine) {
+			const statusSetting = new Setting(containerEl)
+				.setName('Index Status')
+				.setClass('smart-brain-status');
+
+			// Function to update status
+			const updateStatus = () => {
+				const status = ragEngine.getStatus();
+				const statusDesc = status.isIndexing
+					? `Currently indexing... (${status.documentCount} documents)`
+					: status.isReady
+						? `✅ Ready - ${status.documentCount} documents indexed`
+						: 'Not ready';
+				statusSetting.setDesc(statusDesc);
+			};
+
+			// Initial update
+			updateStatus();
+
+			// Update every 2 seconds while settings are open
+			// Clear any existing interval first
+			if (this.statusInterval) {
+				window.clearInterval(this.statusInterval);
+			}
+			this.statusInterval = window.setInterval(updateStatus, 2000);
+		}
+
+		// Clear and rebuild index button
+		new Setting(containerEl)
+			.setName('Clear & Rebuild Index')
+			.setDesc('Delete the vector store and rebuild from scratch')
+			.addButton((button) =>
+				button
+					.setButtonText('Clear & Rebuild')
+					.setWarning()
+					.onClick(async () => {
+						button.setButtonText('Clearing...');
+						button.setDisabled(true);
+
+						if (!ragEngine) {
+							new Notice('❌ RAG Engine not available', 3000);
+							button.setButtonText('Clear & Rebuild');
+							button.setDisabled(false);
+							return;
+						}
+
+						try {
+							// Delete the vectorstore.json file
+							const storePath = `${this.plugin.app.vault.configDir}/plugins/obsidian-sample-plugin/vectorstore.json`;
+							const fileExists = await this.plugin.app.vault.adapter.exists(storePath);
+
+							if (fileExists) {
+								console.log('🗑️ Deleting vector store file:', storePath);
+								await this.plugin.app.vault.adapter.remove(storePath);
+								console.log('✅ Vector store file deleted');
+							} else {
+								console.log('ℹ️ No vector store file to delete');
+							}
+
+							new Notice('🔄 Rebuilding vector store...', 3000);
+
+							// Clear and rebuild with new schema
+							button.setButtonText('Rebuilding...');
+							await ragEngine.rebuild();
+
+							console.log('✅ Rebuild complete');
+							new Notice('✅ Vector store rebuilt successfully!', 5000);
+						} catch (error) {
+							console.error('❌ Rebuild failed:', error);
+							new Notice('❌ Error: ' + (error as Error).message, 5000);
+						}
+
+						button.setButtonText('Clear & Rebuild');
+						button.setDisabled(false);
+					})
+			);
+
+		// Rebuild index button (quick rebuild without clearing)
+		new Setting(containerEl)
+			.setName('Rebuild Index')
+			.setDesc('Rebuild the vector store (keeps existing file)')
+			.addButton((button) =>
+				button
+					.setButtonText('Rebuild Now')
+					.setCta()
+					.onClick(async () => {
+						button.setButtonText('Rebuilding...');
+						button.setDisabled(true);
+
+						try {
+							await ragEngine?.rebuild();
+							new Notice('✅ Vector store rebuilt successfully!', 5000);
+						} catch (error) {
+							new Notice('Error: ' + (error as Error).message, 5000);
+						}
+
+						button.setButtonText('Rebuild Now');
+						button.setDisabled(false);
+					})
+			);
+
+		// Show vector store info button
+		new Setting(containerEl)
+			.setName('Vector Store Info')
+			.setDesc('View detailed information about the vector store')
+			.addButton((button) =>
+				button.setButtonText('Show Info').onClick(async () => {
+					const info = await ragEngine?.vectorStore.exportInfo();
+					new Notice(info || 'Vector store not ready', 10000);
+					console.log(info);
+				})
+			);
+
+		// ====================================================================
+		// File Exclusions
+		// ====================================================================
+
+		containerEl.createEl('h3', { text: 'File Exclusions' });
+
+		new Setting(containerEl)
+			.setName('Exclude Patterns')
+			.setDesc('Glob patterns for files to exclude (one per line, e.g., "Archive/**")')
+			.addTextArea((text) => {
+				text.setPlaceholder('Archive/**\nTemplates/**')
+					.setValue(this.plugin.settings.excludePatterns.join('\n'))
+					.onChange(async (value) => {
+						this.plugin.settings.excludePatterns = value
+							.split('\n')
+							.map((p) => p.trim())
+							.filter((p) => p.length > 0);
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 4;
+				text.inputEl.cols = 50;
+			});
+
+		// ====================================================================
+		// UI Preferences
+		// ====================================================================
+
+		containerEl.createEl('h3', { text: 'UI Preferences' });
+
+		new Setting(containerEl)
+			.setName('View Mode')
+			.setDesc('Chat interface display style')
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption('comfy', 'Comfy (Larger text, more spacing)')
+					.addOption('compact', 'Compact (Dense, efficient)')
+					.setValue(this.plugin.settings.viewMode)
+					.onChange(async (value) => {
+						this.plugin.settings.viewMode = value as 'comfy' | 'compact';
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Chat Folder')
+			.setDesc('Where to save chat histories')
+			.addText((text) =>
+				text
+					.setPlaceholder('Chats')
+					.setValue(this.plugin.settings.chatFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.chatFolder = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// ====================================================================
+		// Advanced
+		// ====================================================================
+
+		containerEl.createEl('h3', { text: 'Advanced' });
+
+		new Setting(containerEl)
+			.setName('Incognito Mode')
+			.setDesc('Force local-only processing (even with cloud providers selected)')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.incognitoMode).onChange(async (value) => {
+					this.plugin.settings.incognitoMode = value;
 					await this.plugin.saveSettings();
-				}));
+				})
+			);
+
+		new Setting(containerEl)
+			.setName('Verbose Logging')
+			.setDesc('Enable detailed console logging for debugging')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.verboseLogging).onChange(async (value) => {
+					this.plugin.settings.verboseLogging = value;
+					await this.plugin.saveSettings();
+				})
+			);
+	}
+
+	/**
+	 * Load available models from Ollama
+	 */
+	private async loadOllamaModels(): Promise<void> {
+		try {
+			const response = await fetch(`${this.plugin.settings.ollamaUrl}/api/tags`);
+
+			if (!response.ok) {
+				console.error('Failed to fetch Ollama models');
+				return;
+			}
+
+			const data = await response.json();
+			const models = data.models || [];
+
+			// Separate models into generation and embedding
+			this.ollamaModels = [];
+			this.ollamaEmbeddingModels = [];
+
+			// Check each model using /api/show to get detailed info
+			for (const model of models) {
+				const modelName = model.name;
+
+				try {
+					const showResponse = await fetch(`${this.plugin.settings.ollamaUrl}/api/show`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							model: modelName,
+						}),
+					});
+
+					if (!showResponse.ok) {
+						// Fallback: use name-based detection
+						const embeddingModelKeywords = ['embed', 'embedding'];
+						const isEmbeddingModel = embeddingModelKeywords.some((keyword) =>
+							modelName.toLowerCase().includes(keyword)
+						);
+
+						if (isEmbeddingModel) {
+							this.ollamaEmbeddingModels.push(modelName);
+						} else {
+							this.ollamaModels.push(modelName);
+						}
+						continue;
+					}
+
+					const modelInfo = await showResponse.json();
+
+					// Check model details to determine if it's an embedding model
+					// Embedding models typically have "bert" family or "embed" in name
+					const family = modelInfo.details?.family || '';
+					const families = modelInfo.details?.families || [];
+					const isEmbeddingModel =
+						family === 'bert' ||
+						families.includes('bert') ||
+						modelName.toLowerCase().includes('embed');
+
+					if (isEmbeddingModel) {
+						this.ollamaEmbeddingModels.push(modelName);
+					} else {
+						this.ollamaModels.push(modelName);
+					}
+				} catch (error) {
+					console.error(`Error getting info for model ${modelName}:`, error);
+					// Fallback: add to generation models
+					this.ollamaModels.push(modelName);
+				}
+			}
+
+			// Always add current selections if not in list
+			if (!this.ollamaModels.includes(this.plugin.settings.ollamaModel)) {
+				this.ollamaModels.unshift(this.plugin.settings.ollamaModel);
+			}
+
+			if (!this.ollamaEmbeddingModels.includes(this.plugin.settings.ollamaEmbeddingModel)) {
+				this.ollamaEmbeddingModels.unshift(this.plugin.settings.ollamaEmbeddingModel);
+			}
+
+			if (this.plugin.settings.verboseLogging) {
+				console.log('Generation models:', this.ollamaModels);
+				console.log('Embedding models:', this.ollamaEmbeddingModels);
+			}
+		} catch (error) {
+			console.error('Error loading Ollama models:', error);
+		}
 	}
 }
