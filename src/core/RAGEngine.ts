@@ -11,7 +11,7 @@ import { App, TFile, Notice } from 'obsidian';
 import { DocumentLoader } from './DocumentLoader';
 import { VectorStore } from './VectorStore';
 import { createProvider } from '../providers';
-import type { Settings, StreamChunk, QueryOptions, LLMProvider, EmbeddingProvider } from '../types';
+import type { Settings, StreamChunk, QueryOptions, LLMProvider, EmbeddingProvider, Message } from '../types';
 
 export class RAGEngine {
 	private app: App;
@@ -166,29 +166,44 @@ export class RAGEngine {
 			const similarityThreshold = options?.similarityThreshold ?? this.settings.similarityThreshold;
 			const fulltextThreshold = options?.fulltextThreshold ?? this.settings.fulltextThreshold;
 			const temperature = options?.temperature ?? this.settings.temperature;
+			const skipSearch = options?.skipSearch || false;
 
-			// 1. Retrieve relevant documents
-			const results = await this.vectorStore.similaritySearch(question, topK, {
-				mode: searchMode,
-				similarityThreshold,
-				fulltextThreshold,
-			});
+			let results: any[] = [];
+			let context = '';
 
-			if (results.length === 0) {
-				yield {
-					type: 'content',
-					content: "I couldn't find any relevant notes to answer your question. Try rephrasing or checking your search settings.",
-				};
-				return;
+			// 1. Retrieve relevant documents (unless skipped)
+			if (!skipSearch) {
+				results = await this.vectorStore.similaritySearch(question, topK, {
+					mode: searchMode,
+					similarityThreshold,
+					fulltextThreshold,
+				});
 			}
 
-			// 2. Format context from retrieved documents
-			const context = this.formatContext(results);
+			// 2. Format context from retrieved documents (or empty if none found/skipped)
+			if (results.length > 0) {
+				context = this.formatContext(results);
+			} else if (skipSearch) {
+				// User explicitly disabled search
+				context = "The user has disabled note search. Answer using your general knowledge.";
+			} else {
+				// No documents found, but we'll still answer the question
+				context = "No relevant documents were found in the knowledge base. Answer the question using your general knowledge, and mention that you couldn't find specific information in the user's notes.";
+			}
+
+			// 3. Add conversation history if present
+			if (options?.conversationHistory && options.conversationHistory.length > 0) {
+				const history = this.formatConversationHistory(options.conversationHistory);
+				context = history + '\n\n' + context;
+			}
 
 			if (this.settings.verboseLogging) {
 				console.log(`Query: "${question}"`);
 				console.log(`Retrieved ${results.length} documents`);
-				console.log('Scores:', results.map((r) => r.score));
+				if (results.length > 0) {
+					console.log('Scores:', results.map((r) => r.score));
+				}
+				console.log(`Conversation history: ${options?.conversationHistory?.length || 0} messages`);
 			}
 
 			// Yield status: search complete, now generating
@@ -197,7 +212,7 @@ export class RAGEngine {
 				status: 'generating',
 			};
 
-			// 3. Generate response (streaming)
+			// 4. Generate response (streaming)
 			for await (const chunk of this.provider.generateStream(question, context, {
 				temperature,
 				systemPrompt: options?.systemPrompt,
@@ -208,15 +223,17 @@ export class RAGEngine {
 				};
 			}
 
-			// 4. Yield sources at the end
-			yield {
-				type: 'sources',
-				sources: results.map((r) => ({
-					file: r.metadata.path,
-					score: r.score || 0,
-					snippet: r.content.substring(0, 200) + '...',
-				})),
-			};
+			// 5. Yield sources at the end (if any)
+			if (results.length > 0) {
+				yield {
+					type: 'sources',
+					sources: results.map((r) => ({
+						file: r.metadata.path,
+						score: r.score || 0,
+						snippet: r.content.substring(0, 200) + '...',
+					})),
+				};
+			}
 		} catch (error) {
 			console.error('Query error:', error);
 			yield {
@@ -235,6 +252,25 @@ export class RAGEngine {
 				return `Document ${i + 1}: ${doc.metadata.path}\n\n${doc.content}`;
 			})
 			.join('\n\n---\n\n');
+	}
+
+	/**
+	 * Format conversation history for multi-turn context
+	 */
+	private formatConversationHistory(history: Message[]): string {
+		if (!history || history.length === 0) return '';
+
+		const formatted = history
+			.map((msg) => {
+				if (msg.role === 'user') {
+					return `User: ${msg.content}`;
+				} else {
+					return `Assistant: ${msg.content}`;
+				}
+			})
+			.join('\n\n');
+
+		return `\nPrevious conversation:\n${formatted}\n`;
 	}
 
 	/**
@@ -297,32 +333,45 @@ export class RAGEngine {
 	 * Update settings and reinitialize if needed
 	 */
 	async updateSettings(settings: Settings): Promise<void> {
+		const oldProvider = this.settings.activeProvider;
 		this.settings = settings;
 
 		// Update all components
 		this.documentLoader.updateSettings(settings);
 		this.vectorStore.updateSettings(settings);
 
-		// Check if provider changed
-		try {
-			const newProvider = createProvider(settings);
-			if (newProvider.name !== this.provider.name) {
-				// Provider changed - need to reinitialize
-				this.provider = newProvider;
+		// Check if provider actually changed (by comparing settings, not objects)
+		const providerChanged = oldProvider !== settings.activeProvider;
+
+		if (providerChanged) {
+			console.log(`Provider changed from ${oldProvider} to ${settings.activeProvider}`);
+
+			// Save current vector store before switching
+			if (this.isReady) {
+				console.log('Saving current vector store before provider switch...');
+				await this.save();
+			}
+
+			try {
+				this.provider = createProvider(settings);
 				this.vectorStore = new VectorStore(this.provider, settings, this.dataPath);
 				this.isReady = false;
 
 				new Notice('Provider changed. Reindexing required.', 5000);
 				await this.initialize();
+			} catch (error) {
+				// Provider not implemented, reset to Ollama
+				console.error('Provider error:', error);
+				new Notice('Selected provider not available. Reverting to Ollama.', 5000);
+				this.settings.activeProvider = 'ollama';
+				const fallbackProvider = createProvider(this.settings);
+				this.provider = fallbackProvider;
 			}
-		} catch (error) {
-			// Provider not implemented, reset to Ollama
-			console.error('Provider error:', error);
-			new Notice('Selected provider not available. Reverting to Ollama.', 5000);
-			settings.activeProvider = 'ollama';
-			const fallbackProvider = createProvider(settings);
-			this.provider = fallbackProvider;
-			this.settings = settings;
+		} else {
+			// Same provider, just settings changed - no need to reinitialize
+			if (this.settings.verboseLogging) {
+				console.log('Settings updated, provider unchanged. No reindexing needed.');
+			}
 		}
 	}
 

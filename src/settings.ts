@@ -29,8 +29,8 @@ export const DEFAULT_SETTINGS: Settings = {
 	voyageEmbeddingModel: 'voyage-2',
 
 	// RAG parameters
-	searchMode: 'fulltext',
-	similarityThreshold: 0.8,
+	searchMode: 'hybrid',
+	similarityThreshold: 0.3,
 	fulltextThreshold: 0,
 	topK: 5,
 	temperature: 0.7,

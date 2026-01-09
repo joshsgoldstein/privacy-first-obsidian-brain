@@ -212,6 +212,8 @@ export interface QueryOptions {
 	fulltextThreshold?: number; // For fulltext/hybrid: % of terms that must match (0-1)
 	temperature?: number; // LLM temperature
 	systemPrompt?: string; // Custom system prompt
+	conversationHistory?: Message[]; // Previous messages for multi-turn context
+	skipSearch?: boolean; // If true, skip RAG search and just use LLM
 }
 
 /**

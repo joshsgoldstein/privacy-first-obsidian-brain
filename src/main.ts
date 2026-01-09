@@ -1,8 +1,9 @@
-import { MarkdownRenderer, Modal, Notice, Plugin, Setting, TFile } from 'obsidian';
+import { MarkdownRenderer, Modal, Notice, Plugin, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { DEFAULT_SETTINGS, SmartSecondBrainSettingTab } from './settings';
 import { createProvider } from './providers';
 import { RAGEngine } from './core/RAGEngine';
 import { SearchModal } from './ui/SearchModal';
+import { ChatView, CHAT_VIEW_TYPE } from './ui/ChatView';
 import type { Settings } from './types';
 
 /**
@@ -12,7 +13,7 @@ import type { Settings } from './types';
 export default class SmartSecondBrainPlugin extends Plugin {
 	settings: Settings;
 	private statusBarItem: HTMLElement;
-	private ragEngine: RAGEngine;
+	ragEngine: RAGEngine; // Public so ChatView can access it
 	private saveTimer: NodeJS.Timeout | null = null;
 
 	async onload() {
@@ -20,6 +21,9 @@ export default class SmartSecondBrainPlugin extends Plugin {
 
 		// Load settings
 		await this.loadSettings();
+
+		// Register chat view
+		this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 
 		// Add status bar item
 		this.statusBarItem = this.addStatusBarItem();
@@ -32,18 +36,20 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		await this.ragEngine.initialize();
 
 		// Add ribbon icons
-		// Brain icon - shows status
-		this.addRibbonIcon('brain', 'Smart Second Brain Status', () => {
-			const status = this.ragEngine.getStatus();
-			new Notice(
-				`Smart Second Brain\n` +
-					`Documents: ${status.documentCount}\n` +
-					`Status: ${status.isIndexing ? 'Indexing...' : status.isReady ? 'Ready' : 'Not ready'}`,
-				5000
-			);
+		// Brain icon - opens quick Q&A modal
+		this.addRibbonIcon('brain', 'Ask a Question', async () => {
+			const question = await this.promptForQuestion();
+			if (question) {
+				await this.showAnswerModal(question);
+			}
 		});
 
-		// Search icon - opens search modal
+		// Chat icon - opens chat sidebar
+		this.addRibbonIcon('message-circle', 'Open Chat', () => {
+			this.activateChatView();
+		});
+
+		// Search icon - opens search modal (debugging)
 		this.addRibbonIcon('search', 'Search Knowledge Base', () => {
 			new SearchModal(this.app, this.ragEngine).open();
 		});
@@ -152,13 +158,56 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		console.log('Smart Second Brain plugin loaded!');
 	}
 
-	onunload() {
+	async onunload() {
 		console.log('Unloading Smart Second Brain plugin...');
 
 		// Clear save timer
 		if (this.saveTimer) {
 			clearTimeout(this.saveTimer);
 		}
+
+		// Save vector store before unloading to prevent data loss
+		if (this.ragEngine) {
+			console.log('Saving vector store before plugin unload...');
+			await this.ragEngine.save();
+		}
+	}
+
+	/**
+	 * Open or focus the chat view in right sidebar
+	 */
+	async activateChatView(): Promise<ChatView | null> {
+		const { workspace } = this.app;
+
+		// Check if view is already open
+		const leaves = workspace.getLeavesOfType(CHAT_VIEW_TYPE);
+
+		if (leaves.length > 0) {
+			// View already exists, focus it
+			const leaf = leaves[0];
+			if (leaf) {
+				workspace.revealLeaf(leaf);
+
+				if (leaf.view instanceof ChatView) {
+					return leaf.view;
+				}
+			}
+		} else {
+			// Create new view in right sidebar
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (rightLeaf) {
+				await rightLeaf.setViewState({
+					type: CHAT_VIEW_TYPE,
+					active: true,
+				});
+
+				if (rightLeaf.view instanceof ChatView) {
+					return rightLeaf.view;
+				}
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -273,6 +322,9 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		const saveButton = leftButtons.createEl('button', { text: '💾 Save as Note' });
 		saveButton.disabled = true; // Disable until answer is ready
 
+		const chatButton = leftButtons.createEl('button', { text: '💬 Continue in Chat' });
+		chatButton.disabled = true; // Disable until answer is ready
+
 		// Right side buttons
 		const rightButtons = buttonFooter.createDiv('rag-button-right');
 		const copyButton = rightButtons.createEl('button', { text: '📋 Copy' });
@@ -328,6 +380,7 @@ export default class SmartSecondBrainPlugin extends Plugin {
 			// Enable buttons now that answer is complete
 			saveButton.disabled = false;
 			copyButton.disabled = false;
+			chatButton.disabled = false;
 
 			// Add button click handlers
 			saveButton.addEventListener('click', async () => {
@@ -338,6 +391,17 @@ export default class SmartSecondBrainPlugin extends Plugin {
 			copyButton.addEventListener('click', () => {
 				navigator.clipboard.writeText(answer);
 				new Notice('Answer copied to clipboard!');
+			});
+
+			chatButton.addEventListener('click', async () => {
+				const chatView = await this.activateChatView();
+				if (chatView) {
+					await chatView.addModalQA(question, answer, sources);
+					modal.close();
+					new Notice('✅ Conversation started in chat!');
+				} else {
+					new Notice('❌ Failed to open chat view');
+				}
 			});
 		} catch (error) {
 			console.error('RAG query error:', error);
