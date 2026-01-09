@@ -164,8 +164,11 @@ export class ChatView extends ItemView {
 		deleteButton.innerHTML = '🗑️';
 		deleteButton.addEventListener('click', () => this.clearChat());
 
+		// Input row (textarea + send button)
+		const inputRow = this.inputContainer.createDiv('chat-input-row');
+
 		// Textarea for input
-		this.inputEl = this.inputContainer.createEl('textarea', {
+		this.inputEl = inputRow.createEl('textarea', {
 			cls: 'chat-input',
 			attr: {
 				placeholder: 'Ask a question about your notes...',
@@ -174,7 +177,7 @@ export class ChatView extends ItemView {
 		});
 
 		// Send button
-		this.sendButton = this.inputContainer.createEl('button', {
+		this.sendButton = inputRow.createEl('button', {
 			text: 'Send',
 			cls: 'chat-send-button',
 		});

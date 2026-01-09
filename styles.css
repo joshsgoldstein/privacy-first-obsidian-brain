@@ -737,10 +737,11 @@
 	transform: scale(1.1) rotate(-5deg);
 }
 
-/* Input row wrapper */
-.chat-input-container > textarea,
-.chat-input-container > button {
-	margin: 0;
+/* Input row wrapper (textarea + send button) */
+.chat-input-row {
+	display: flex;
+	gap: 8px;
+	align-items: flex-end;
 }
 
 .chat-input {
