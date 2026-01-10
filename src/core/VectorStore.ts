@@ -505,6 +505,21 @@ export class VectorStore {
 
 			this.isInitialized = true;
 
+			// Count documents after loading
+			// Get unique paths from the loaded data
+			const uniquePaths = new Set<string>();
+			if (data.docs) {
+				for (const doc of Object.values(data.docs) as any[]) {
+					if (doc?.path) {
+						uniquePaths.add(doc.path);
+					}
+				}
+			}
+			this.documentCount = uniquePaths.size;
+
+			console.log(`✅ Vector store loaded from ${this.storePath}`);
+			console.log(`📊 Loaded ${this.documentCount} documents`);
+
 			if (this.settings.verboseLogging) {
 				console.log(`Vector store loaded from ${this.storePath}`);
 			}
