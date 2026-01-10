@@ -112,6 +112,15 @@ export class ChatView extends ItemView {
 			this.toggleMenu();
 		});
 
+		const loadChatMenuItem = dropdownMenu.createEl('button', {
+			text: '📂 Load Chat',
+			cls: 'chat-menu-item',
+		});
+		loadChatMenuItem.addEventListener('click', () => {
+			this.loadChat();
+			this.toggleMenu();
+		});
+
 		// Store reference for toggling
 		(header as any).dropdownMenu = dropdownMenu;
 
@@ -611,6 +620,173 @@ export class ChatView extends ItemView {
 	 */
 	private generateId(): string {
 		return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+	}
+
+	/**
+	 * Load a saved chat from the vault
+	 */
+	async loadChat(): Promise<void> {
+		try {
+			// Get all files in Chats folder
+			const chatsFolder = 'Chats';
+			const folder = this.app.vault.getAbstractFileByPath(chatsFolder);
+
+			if (!folder || !(folder instanceof this.app.vault.adapter.constructor)) {
+				new Notice('No saved chats found. Chats folder does not exist.');
+				return;
+			}
+
+			// Get all markdown files in Chats folder
+			const files = this.app.vault.getMarkdownFiles()
+				.filter(file => file.path.startsWith(chatsFolder + '/'))
+				.sort((a, b) => b.stat.mtime - a.stat.mtime); // Sort by most recent first
+
+			if (files.length === 0) {
+				new Notice('No saved chats found.');
+				return;
+			}
+
+			// Show file picker modal
+			const modal = new Modal(this.app);
+			modal.titleEl.setText('Load Chat');
+
+			const container = modal.contentEl.createDiv();
+			container.style.maxHeight = '400px';
+			container.style.overflowY = 'auto';
+
+			const fileList = container.createEl('div');
+			fileList.style.display = 'flex';
+			fileList.style.flexDirection = 'column';
+			fileList.style.gap = '8px';
+
+			for (const file of files) {
+				const fileButton = fileList.createEl('button');
+				fileButton.style.padding = '12px';
+				fileButton.style.textAlign = 'left';
+				fileButton.style.border = '1px solid var(--background-modifier-border)';
+				fileButton.style.borderRadius = '6px';
+				fileButton.style.background = 'var(--background-secondary)';
+				fileButton.style.cursor = 'pointer';
+				fileButton.style.transition = 'all 0.2s ease';
+
+				const fileName = fileButton.createEl('div');
+				fileName.style.fontWeight = '600';
+				fileName.setText(file.basename);
+
+				const fileDate = fileButton.createEl('div');
+				fileDate.style.fontSize = '0.85em';
+				fileDate.style.color = 'var(--text-muted)';
+				fileDate.setText(new Date(file.stat.mtime).toLocaleString());
+
+				fileButton.addEventListener('mouseenter', () => {
+					fileButton.style.background = 'var(--background-modifier-hover)';
+				});
+
+				fileButton.addEventListener('mouseleave', () => {
+					fileButton.style.background = 'var(--background-secondary)';
+				});
+
+				fileButton.addEventListener('click', async () => {
+					modal.close();
+					await this.loadChatFromFile(file);
+				});
+			}
+
+			modal.open();
+		} catch (error) {
+			console.error('Failed to load chat:', error);
+			new Notice(`❌ Failed to load chats: ${(error as Error).message}`);
+		}
+	}
+
+	/**
+	 * Load chat from a specific file
+	 */
+	private async loadChatFromFile(file: TFile): Promise<void> {
+		try {
+			const content = await this.app.vault.read(file);
+
+			// Parse the chat format back into messages
+			const messages: Message[] = [];
+			const lines = content.split('\n');
+
+			let currentRole: 'user' | 'assistant' | null = null;
+			let currentContent: string[] = [];
+			let currentSources: any[] = [];
+			let inKnowledge = false;
+
+			for (let i = 0; i < lines.length; i++) {
+				const line = lines[i];
+
+				if (line === 'User') {
+					// Save previous message if exists
+					if (currentRole && currentContent.length > 0) {
+						messages.push({
+							id: this.generateId(),
+							role: currentRole,
+							content: currentContent.join('\n').trim(),
+							timestamp: Date.now(),
+							sources: currentRole === 'assistant' ? currentSources : undefined,
+						});
+					}
+					currentRole = 'user';
+					currentContent = [];
+					currentSources = [];
+					inKnowledge = false;
+				} else if (line === 'Assistant') {
+					// Save previous message if exists
+					if (currentRole && currentContent.length > 0) {
+						messages.push({
+							id: this.generateId(),
+							role: currentRole,
+							content: currentContent.join('\n').trim(),
+							timestamp: Date.now(),
+							sources: currentRole === 'assistant' ? currentSources : undefined,
+						});
+					}
+					currentRole = 'assistant';
+					currentContent = [];
+					currentSources = [];
+					inKnowledge = false;
+				} else if (line === '<knowledge>') {
+					inKnowledge = true;
+				} else if (line === '</knowledge>') {
+					inKnowledge = false;
+				} else if (line === '- - - - -') {
+					// Message separator - ignore
+					continue;
+				} else if (inKnowledge) {
+					// Parse sources from knowledge block
+					if (line.startsWith('File: [[') && line.endsWith(']]')) {
+						const file = line.slice(8, -2);
+						currentSources.push({ file, score: 0.5, snippet: '' });
+					}
+				} else if (currentRole && line.trim()) {
+					currentContent.push(line);
+				}
+			}
+
+			// Save last message
+			if (currentRole && currentContent.length > 0) {
+				messages.push({
+					id: this.generateId(),
+					role: currentRole,
+					content: currentContent.join('\n').trim(),
+					timestamp: Date.now(),
+					sources: currentRole === 'assistant' ? currentSources : undefined,
+				});
+			}
+
+			// Load messages into chat
+			this.messages = messages;
+			this.currentChatFile = file.path;
+			await this.renderMessages();
+
+			new Notice(`✅ Loaded chat: ${file.basename}`);
+		} catch (error) {
+			console.error('Failed to load chat file:', error);
+			new Notice(`❌ Failed to load chat: ${(error as Error).message}`);
+		}
 	}
 
 	/**
