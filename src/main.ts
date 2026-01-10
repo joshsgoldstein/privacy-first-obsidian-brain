@@ -250,8 +250,12 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on('create', (file) => {
 				if (file instanceof TFile && file.extension === 'md') {
-					this.ragEngine.updateDocument(file);
-					this.debouncedSave();
+					// Only process if RAG engine is ready
+					const status = this.ragEngine.getStatus();
+					if (status.isReady && !status.isIndexing) {
+						this.ragEngine.updateDocument(file);
+						this.debouncedSave();
+					}
 				}
 			})
 		);
@@ -260,8 +264,12 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => {
 				if (file instanceof TFile && file.extension === 'md') {
-					this.ragEngine.updateDocument(file);
-					this.debouncedSave();
+					// Only process if RAG engine is ready
+					const status = this.ragEngine.getStatus();
+					if (status.isReady && !status.isIndexing) {
+						this.ragEngine.updateDocument(file);
+						this.debouncedSave();
+					}
 				}
 			})
 		);
@@ -270,8 +278,12 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on('delete', (file) => {
 				if (file instanceof TFile && file.extension === 'md') {
-					this.ragEngine.removeDocument(file);
-					this.debouncedSave();
+					// Only process if RAG engine is ready
+					const status = this.ragEngine.getStatus();
+					if (status.isReady && !status.isIndexing) {
+						this.ragEngine.removeDocument(file);
+						this.debouncedSave();
+					}
 				}
 			})
 		);
@@ -280,11 +292,15 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on('rename', (file, oldPath) => {
 				if (file instanceof TFile && file.extension === 'md') {
-					// Remove old document
-					this.ragEngine.removeDocument({ path: oldPath } as TFile);
-					// Add new document
-					this.ragEngine.updateDocument(file);
-					this.debouncedSave();
+					// Only process if RAG engine is ready
+					const status = this.ragEngine.getStatus();
+					if (status.isReady && !status.isIndexing) {
+						// Remove old document
+						this.ragEngine.removeDocument({ path: oldPath } as TFile);
+						// Add new document
+						this.ragEngine.updateDocument(file);
+						this.debouncedSave();
+					}
 				}
 			})
 		);

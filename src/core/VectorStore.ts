@@ -171,6 +171,19 @@ export class VectorStore {
 		}
 
 		try {
+			// Check if document already exists and is unchanged
+			const existingChunks = await this.getDocumentChunks(doc.metadata.path);
+			if (existingChunks.length > 0) {
+				const existingMtime = existingChunks[0].mtime;
+				if (existingMtime === doc.metadata.mtime) {
+					// Document unchanged, skip re-embedding
+					if (this.settings.verboseLogging) {
+						console.log(`⏭ Skipped (unchanged): ${doc.metadata.path}`);
+					}
+					return;
+				}
+			}
+
 			// Remove all old chunks for this document
 			await this.removeDocument(doc.metadata.path);
 
@@ -451,19 +464,28 @@ export class VectorStore {
 	 */
 	async load(fs: any): Promise<boolean> {
 		try {
+			console.log(`🔍 Attempting to load vector store from: ${this.storePath}`);
+
 			// Check if file exists
 			const exists = await fs.adapter.exists(this.storePath);
+			console.log(`📂 File exists: ${exists}`);
+
 			if (!exists) {
+				console.log('❌ Vector store file not found, will need to index');
 				return false;
 			}
 
 			// Read data
+			console.log('📖 Reading vector store file...');
 			const jsonData = await fs.adapter.read(this.storePath);
 			const data = JSON.parse(jsonData);
+			console.log('✅ Vector store data parsed successfully');
 
 			// Check if dimensions match
 			const currentDimensions = this.embeddings.getDimensions();
 			const storedDimensions = data.schema?.embedding?.match(/vector\[(\d+)\]/)?.[1];
+
+			console.log(`📏 Dimension check - Stored: ${storedDimensions}D, Current: ${currentDimensions}D`);
 
 			if (storedDimensions && parseInt(storedDimensions) !== currentDimensions) {
 				console.warn(`⚠️ Dimension mismatch detected!`);
@@ -476,6 +498,8 @@ export class VectorStore {
 				);
 				return false;
 			}
+
+			console.log('✅ Dimensions match, proceeding with load...');
 
 			// Restore Orama DB
 			const dimensions = this.embeddings.getDimensions();
@@ -501,17 +525,21 @@ export class VectorStore {
 				},
 			});
 
+			console.log('📥 Loading data into Orama database...');
 			await load(this.db, data);
+			console.log('✅ Data loaded into Orama successfully');
 
 			this.isInitialized = true;
 
 			// Count documents after loading
-			// Get unique paths from the loaded data
+			// Get unique paths from the loaded data (structure: internalDocumentIDStore.internalIdToId)
 			const uniquePaths = new Set<string>();
-			if (data.docs) {
-				for (const doc of Object.values(data.docs) as any[]) {
-					if (doc?.path) {
-						uniquePaths.add(doc.path);
+			if (data.internalDocumentIDStore?.internalIdToId) {
+				for (const docId of data.internalDocumentIDStore.internalIdToId) {
+					// Extract path from "path#chunkN"
+					const path = docId.split('#')[0];
+					if (path) {
+						uniquePaths.add(path);
 					}
 				}
 			}
@@ -526,7 +554,9 @@ export class VectorStore {
 
 			return true;
 		} catch (error) {
-			console.error('Failed to load vector store:', error);
+			console.error('❌ Failed to load vector store:', error);
+			console.error('Error details:', (error as Error).message);
+			console.error('Stack:', (error as Error).stack);
 			return false;
 		}
 	}

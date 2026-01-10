@@ -717,6 +717,8 @@ export class ChatView extends ItemView {
 
 			for (let i = 0; i < lines.length; i++) {
 				const line = lines[i];
+				// Skip undefined lines (TypeScript safety)
+				if (line === undefined) continue;
 
 				if (line === 'User') {
 					// Save previous message if exists
