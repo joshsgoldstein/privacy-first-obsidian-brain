@@ -398,7 +398,7 @@ export class VectorStore {
 							property: 'embedding',
 						},
 						properties: ['content', 'path', 'noteName', 'tags'],
-						similarity: similarityThreshold,
+						// Don't use similarity threshold in hybrid mode - let BM25 + vector scoring work naturally
 						threshold: fulltextThreshold,
 						includeVectors: false,
 						limit: k,

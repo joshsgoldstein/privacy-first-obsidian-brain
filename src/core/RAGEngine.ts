@@ -168,16 +168,21 @@ export class RAGEngine {
 			const temperature = options?.temperature ?? this.settings.temperature;
 			const skipSearch = options?.skipSearch || false;
 
+			console.log(`🔍 Query options - skipSearch: ${skipSearch}, useRAG: ${!skipSearch}`);
+
 			let results: any[] = [];
 			let context = '';
 
 			// 1. Retrieve relevant documents (unless skipped)
 			if (!skipSearch) {
+				console.log('🔎 Performing vector search...');
 				results = await this.vectorStore.similaritySearch(question, topK, {
 					mode: searchMode,
 					similarityThreshold,
 					fulltextThreshold,
 				});
+			} else {
+				console.log('⏭️ Skipping vector search (RAG disabled by user)');
 			}
 
 			// 2. Format context from retrieved documents (or empty if none found/skipped)

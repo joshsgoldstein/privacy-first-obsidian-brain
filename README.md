@@ -4,12 +4,15 @@ An intelligent RAG (Retrieval-Augmented Generation) plugin for Obsidian that tra
 
 ## Features
 
-### 💬 **RAG-Powered Q&A**
-- **Ask a Question**: Natural language queries with streaming AI answers
-- **Source Attribution**: Every answer includes clickable links to source notes
-- **Markdown Rendering**: Beautiful formatted answers with headers, lists, code blocks, and more
-- **Save to Vault**: Export Q&A sessions as notes in `QnA/` folder with YAML frontmatter
-- **Stage-Specific Messages**: Real-time feedback showing search and generation phases
+### 💬 **Interactive Chat Interface**
+- **Persistent Chat Sidebar**: Side-by-side chat window that stays open while you work
+- **Multi-Turn Conversations**: Full conversation history with context awareness
+- **RAG Toggle**: 🐙 octopus button to turn note search on/off (use your knowledge base or just chat)
+- **Save & Load Chats**: Automatically saves conversations to `Chats/` folder, reload anytime
+- **Save Individual Responses**: 💾 button on each assistant message to extract as a standalone note
+- **Live Stats Display**: See document count, provider, and search mode in chat header
+- **Streaming Responses**: Watch answers appear in real-time with markdown formatting
+- **Source Attribution**: Clickable links to source notes with relevance scores
 
 ### 🤖 **Multi-Provider AI Support**
 - **Ollama (Local)**: Completely offline, privacy-first
@@ -31,23 +34,29 @@ An intelligent RAG (Retrieval-Augmented Generation) plugin for Obsidian that tra
 - **Hybrid Search**: Combines both approaches for the best of both worlds (recommended)
 
 ### 🧠 **Intelligent Indexing**
-- Automatically indexes your vault on startup
-- Incremental updates when you create, modify, or delete notes
-- Smart chunking with overlap for better context preservation
-- Caches embeddings to avoid re-processing unchanged documents
-- Dimension validation prevents mixing incompatible models
+- **Automatic Indexing**: Indexes your vault on startup (or loads from disk if already indexed)
+- **Vector Store Persistence**: Index saves to disk and loads instantly on restart
+- **Incremental Updates**: Only re-indexes files that actually changed (mtime checking)
+- **Smart Chunking**: Overlapping chunks for better context preservation
+- **File Watchers**: Auto-updates when you create, modify, rename, or delete notes
+- **Dimension Validation**: Prevents mixing incompatible embedding models
 
 ### 🎨 **User Interface**
-- **RAG Modal**: Beautiful Q&A interface with real-time streaming
-  - Fixed question header and button footer
-  - Scrollable answer section with markdown rendering
-  - Copy to clipboard and save as note buttons
-  - Stage indicators (searching → thinking → answering)
-- **Search Modal**: Document retrieval interface (testing/debugging)
+- **Chat Sidebar**: Persistent side-by-side chat interface
+  - **Header**: 🆕 New | 📂 Load | 💾 Save buttons
+  - **Stats Bar**: Live display of doc count, provider, and search mode
+  - **Control Buttons**: 💾 Save | 🐙 RAG Toggle | 🗑️ Delete (overlapping compact design)
+  - **Responsive Design**: Hamburger menu (☰) for narrow sidebars with container queries
+- **Message Display**:
+  - User messages (👤) and assistant responses (🤖) with timestamps
+  - Save button (💾) on each assistant message to extract as standalone note
+  - Markdown rendering with code blocks, lists, headers, etc.
+  - Collapsible source attribution with relevance scores
 - **Ribbon Icons**:
-  - 🧠 Brain icon - Shows indexing status and document count
-  - 🔍 Search icon - Opens vector search modal
-- **Live Status Updates**: Real-time indexing progress in settings
+  - 🧠 Brain icon - Ask a quick question (modal)
+  - 💬 Chat icon - Opens persistent chat sidebar
+  - 🔍 Search icon - Opens vector search modal (debugging)
+- **Status Bar**: Shows document count and indexing status
 
 ### ⚙️ **Flexible Configuration**
 - Multiple search modes (fulltext, vector, hybrid)
@@ -110,12 +119,14 @@ Choose **one** of the following:
    - Watch the 🧠 brain icon in left sidebar for progress
    - Indexing time depends on vault size (~10-30 seconds per 100 notes)
 
-3. **Ask Questions**
-   - Press `Cmd/Ctrl + P` → "Ask a Question"
+3. **Start Chatting**
+   - Click the 💬 **Chat icon** in the left ribbon to open the chat sidebar
    - Type your question: "What are my project goals?"
-   - Watch answer stream in with sources
-   - Click "💾 Save as Note" to export to `QnA/` folder
+   - Watch the answer stream in with sources
+   - Use the 🐙 **octopus toggle** to turn note search on/off
+   - Click 💾 on any response to save it as a standalone note
    - Click sources to jump to relevant notes
+   - Chats auto-save to `Chats/` folder - reload anytime with 📂 Load button
 
 ## Search Modes
 
@@ -236,17 +247,21 @@ npm run lint
 src/
 ├── core/
 │   ├── RAGEngine.ts          # Main orchestration engine
-│   ├── VectorStore.ts        # Vector & full-text search
+│   ├── VectorStore.ts        # Vector & full-text search with Orama
 │   └── DocumentLoader.ts     # Document loading & parsing
 ├── providers/
 │   ├── BaseProvider.ts       # Provider interface
 │   ├── OllamaProvider.ts     # Ollama implementation
+│   ├── OpenAIProvider.ts     # OpenAI implementation
+│   ├── AnthropicProvider.ts  # Anthropic + Voyage AI implementation
 │   └── index.ts              # Provider factory
 ├── ui/
-│   └── SearchModal.ts        # Search UI component
+│   ├── ChatView.ts           # Persistent chat sidebar interface
+│   └── SearchModal.ts        # Search UI component (debugging)
 ├── utils/
 │   └── chunking.ts           # Text chunking utilities
-├── types.ts                  # TypeScript definitions
+├── types/
+│   └── index.ts              # TypeScript definitions
 ├── settings.ts               # Settings UI
 └── main.ts                   # Plugin entry point
 ```
@@ -300,6 +315,17 @@ src/
 **Problem**: Settings slow to load
 **Solution**: Settings now load models asynchronously - should be instant
 
+### Chat Issues
+
+**Problem**: Chat history not loading
+**Solution**: Check that `Chats/` folder exists in your vault root. Chats are saved as markdown files with specific format.
+
+**Problem**: Index resets on restart
+**Solution**: This should be fixed - the vector store now persists to `vectorstore.json` and loads on startup. If still happening, check console for errors.
+
+**Problem**: RAG toggle (octopus) not working
+**Solution**: Check console logs - should show "Skipping vector search (RAG disabled by user)" when toggle is off.
+
 ## Roadmap
 
 ### Phase 1 - Foundation ✅ COMPLETE
@@ -310,12 +336,15 @@ src/
 - [x] Vector + BM25 + Hybrid search modes
 - [x] Real-time indexing with file watchers
 
-### Phase 2 - Enhanced UX (Next)
-- [ ] Conversation history (multi-turn chat)
-- [ ] Follow-up questions with context
-- [ ] Chat threads view/management
-- [ ] Improved source display with previews
-- [ ] Query suggestions based on vault content
+### Phase 2 - Enhanced UX ✅ COMPLETE
+- [x] Conversation history (multi-turn chat)
+- [x] Follow-up questions with context
+- [x] Chat threads view/management (save/load)
+- [x] Improved source display with relevance scores
+- [x] RAG toggle to disable search when needed
+- [x] Save individual responses as notes
+- [x] Persistent chat sidebar interface
+- [x] Auto-save conversations
 
 ### Phase 3 - Advanced Features
 - [ ] Advanced filtering (date ranges, tags, folders)

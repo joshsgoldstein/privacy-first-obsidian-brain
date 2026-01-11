@@ -75,6 +75,12 @@ export class ChatView extends ItemView {
 		});
 		newChatButton.addEventListener('click', () => this.startNewChat());
 
+		const loadChatButton = regularButtons.createEl('button', {
+			text: '📂 Load',
+			cls: 'chat-header-button',
+		});
+		loadChatButton.addEventListener('click', () => this.loadChat());
+
 		const saveChatButton = regularButtons.createEl('button', {
 			text: '💾 Save',
 			cls: 'chat-header-button',
@@ -290,6 +296,16 @@ export class ChatView extends ItemView {
 		const timestamp = header.createSpan('chat-message-timestamp');
 		timestamp.setText(new Date(message.timestamp).toLocaleTimeString());
 
+		// Add save button for assistant messages
+		if (message.role === 'assistant') {
+			const saveButton = header.createEl('button', {
+				cls: 'chat-message-save-button',
+				attr: { 'aria-label': 'Save response as note' },
+			});
+			saveButton.innerHTML = '💾';
+			saveButton.addEventListener('click', () => this.saveResponseAsNote(message));
+		}
+
 		// Message content
 		const content = messageEl.createDiv('chat-message-content');
 
@@ -380,6 +396,7 @@ export class ChatView extends ItemView {
 
 			// Query with conversation history for multi-turn context
 			// Skip search if RAG toggle is off
+			console.log(`💬 ChatView - useRAG: ${this.useRAG}, skipSearch: ${!this.useRAG}`);
 			for await (const chunk of this.plugin.ragEngine.query(question, {
 				conversationHistory,
 				skipSearch: !this.useRAG,
@@ -629,12 +646,6 @@ export class ChatView extends ItemView {
 		try {
 			// Get all files in Chats folder
 			const chatsFolder = 'Chats';
-			const folder = this.app.vault.getAbstractFileByPath(chatsFolder);
-
-			if (!folder || !(folder instanceof this.app.vault.adapter.constructor)) {
-				new Notice('No saved chats found. Chats folder does not exist.');
-				return;
-			}
 
 			// Get all markdown files in Chats folder
 			const files = this.app.vault.getMarkdownFiles()
@@ -642,7 +653,7 @@ export class ChatView extends ItemView {
 				.sort((a, b) => b.stat.mtime - a.stat.mtime); // Sort by most recent first
 
 			if (files.length === 0) {
-				new Notice('No saved chats found.');
+				new Notice('No saved chats found. Save a chat first!');
 				return;
 			}
 
@@ -837,6 +848,47 @@ export class ChatView extends ItemView {
 			new Notice(`✅ Chat saved to ${filePath}`);
 		} catch (error) {
 			console.error('Failed to save chat:', error);
+			new Notice(`❌ Failed to save: ${(error as Error).message}`);
+		}
+	}
+
+	/**
+	 * Save a single response as a note
+	 */
+	async saveResponseAsNote(message: Message): Promise<void> {
+		if (message.role !== 'assistant') return;
+
+		// Generate default filename from message content
+		const contentPreview = message.content
+			.substring(0, 50)
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-|-$/g, '');
+		const timestamp = new Date().toISOString().split('T')[0];
+		const defaultName = `${timestamp}-${contentPreview}`;
+
+		// Prompt for filename
+		const filename = await this.promptForFilename(defaultName);
+		if (!filename) return;
+
+		// Format content with sources if present
+		let content = message.content;
+
+		if (message.sources && message.sources.length > 0) {
+			content += '\n\n---\n\n## Sources\n\n';
+			for (const source of message.sources) {
+				content += `- [[${source.file}]] (${(source.score * 100).toFixed(0)}%)\n`;
+			}
+		}
+
+		// Save to vault
+		const filePath = `${filename}.md`;
+
+		try {
+			await this.app.vault.create(filePath, content);
+			new Notice(`✅ Response saved to ${filePath}`);
+		} catch (error) {
+			console.error('Failed to save response:', error);
 			new Notice(`❌ Failed to save: ${(error as Error).message}`);
 		}
 	}

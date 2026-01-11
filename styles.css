@@ -531,6 +531,25 @@
 	color: var(--text-muted);
 }
 
+/* Save button for individual messages */
+.chat-message-save-button {
+	margin-left: auto;
+	padding: 4px 8px;
+	font-size: 0.9em;
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	cursor: pointer;
+	opacity: 0.6;
+	transition: all 0.2s ease;
+}
+
+.chat-message-save-button:hover {
+	opacity: 1;
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
 /* Message content - different styles for user vs assistant */
 .chat-message-content {
 	padding: 12px 16px;
