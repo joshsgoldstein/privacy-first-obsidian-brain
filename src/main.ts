@@ -29,9 +29,11 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		this.statusBarItem = this.addStatusBarItem();
 		this.statusBarItem.setText('🧠 Initializing...');
 
-		// Initialize RAG Engine
-		// Use the actual plugin folder (obsidian-sample-plugin) not the manifest ID
+		// Ensure prompts folder exists with default templates
 		const pluginDir = this.app.vault.configDir + '/plugins/obsidian-sample-plugin';
+		await this.ensurePromptsExist(pluginDir);
+
+		// Initialize RAG Engine
 		this.ragEngine = new RAGEngine(this.app, this.settings, pluginDir);
 		await this.ragEngine.initialize();
 
@@ -646,6 +648,261 @@ ${answer}
 		if (this.ragEngine) {
 			await this.ragEngine.updateSettings(this.settings);
 		}
+	}
+
+	/**
+	 * Ensure prompts folder exists and contains default templates
+	 */
+	async ensurePromptsExist(pluginDir: string): Promise<void> {
+		const promptsPath = `${pluginDir}/prompts`;
+
+		try {
+			// Check if prompts folder exists
+			const promptsFolder = this.app.vault.getAbstractFileByPath(promptsPath);
+
+			if (!promptsFolder) {
+				console.log('📝 Prompts folder not found, creating with default templates...');
+
+				// Create prompts folder using Node.js fs (Obsidian adapter)
+				const { adapter } = this.app.vault;
+				await adapter.mkdir(promptsPath);
+
+				// Create default prompt templates
+				await this.createDefaultPrompts(adapter, promptsPath);
+
+				console.log('✅ Default prompts created successfully');
+				new Notice('📝 Created default prompt templates', 3000);
+			} else {
+				// Folder exists, check if templates exist
+				const requiredPrompts = ['rag-default.md', 'rag-technical.md', 'rag-creative.md'];
+				const { adapter } = this.app.vault;
+				let missingCount = 0;
+
+				for (const promptFile of requiredPrompts) {
+					const promptPath = `${promptsPath}/${promptFile}`;
+					const exists = await adapter.exists(promptPath);
+
+					if (!exists) {
+						console.log(`📝 Missing prompt template: ${promptFile}, creating...`);
+						const content = this.getDefaultPromptContent(promptFile);
+						await adapter.write(promptPath, content);
+						missingCount++;
+					}
+				}
+
+				if (missingCount > 0) {
+					console.log(`✅ Created ${missingCount} missing prompt template(s)`);
+					new Notice(`📝 Created ${missingCount} missing prompt template(s)`, 3000);
+				}
+			}
+		} catch (error) {
+			console.error('Failed to ensure prompts exist:', error);
+			new Notice('⚠️ Failed to create default prompts. Check console.', 5000);
+		}
+	}
+
+	/**
+	 * Create all default prompt templates
+	 */
+	private async createDefaultPrompts(adapter: any, promptsPath: string): Promise<void> {
+		const prompts = [
+			{ file: 'rag-default.md', content: this.getDefaultPromptContent('rag-default.md') },
+			{ file: 'rag-technical.md', content: this.getDefaultPromptContent('rag-technical.md') },
+			{ file: 'rag-creative.md', content: this.getDefaultPromptContent('rag-creative.md') },
+		];
+
+		for (const prompt of prompts) {
+			const path = `${promptsPath}/${prompt.file}`;
+			await adapter.write(path, prompt.content);
+			console.log(`Created: ${prompt.file}`);
+		}
+	}
+
+	/**
+	 * Get default content for a prompt template
+	 */
+	private getDefaultPromptContent(filename: string): string {
+		if (filename === 'rag-default.md') {
+			return `---
+name: Default RAG Assistant
+type: rag
+description: Helpful assistant that answers questions using your personal notes
+variables: [context, question, history, date, vault]
+---
+
+<!--
+PROMPT TEMPLATE - Default RAG Assistant
+
+Available variables:
+- {context}  = Retrieved documents from vector search
+- {question} = User's current question
+- {history}  = Previous conversation messages (formatted as User:/Assistant:)
+- {date}     = Current date (e.g., "1/11/2026")
+- {vault}    = Name of the Obsidian vault
+
+Edit this file to customize how the AI responds to your queries.
+-->
+
+You are a helpful assistant that answers questions based on the user's personal notes.
+
+Current date: {date}
+Vault: {vault}
+
+IMPORTANT: Format your response in markdown and include source citations at the end.
+
+Citation format:
+- Use markdown links: [Note Title](note-path.md)
+- Include a "## Sources" section at the end
+- List all referenced notes with links
+
+Example 1:
+User: "What are my project goals?"
+Assistant: Your main project goals include:
+- Building a knowledge management system
+- Integrating AI capabilities
+- Creating a seamless user experience
+
+These goals are outlined in your planning documents and focus on creating value through automation.
+
+## Sources
+- [Project Overview](projects/overview.md)
+- [Goals 2024](planning/goals-2024.md)
+
+Example 2:
+User: "What did I learn about React?"
+Assistant: You learned several key concepts about React:
+
+**Hooks**: useState and useEffect are fundamental for managing state and side effects. You noted that hooks simplified your component logic.
+
+**Performance**: React.memo and useMemo help optimize re-renders, which you found crucial for larger applications.
+
+## Sources
+- [React Learning Notes](development/react-notes.md)
+- [Performance Tips](development/optimization.md)
+
+Now answer the user's question following this format.
+
+Context from your notes:
+{context}
+
+{history}
+
+Question: {question}
+
+Answer:
+`;
+		} else if (filename === 'rag-technical.md') {
+			return `---
+name: Technical Assistant
+type: rag
+description: Code-focused assistant for developers
+variables: [context, question, history, date, vault]
+---
+
+<!--
+PROMPT TEMPLATE - Technical Assistant
+
+Available variables:
+- {context}  = Retrieved documents from vector search
+- {question} = User's current question
+- {history}  = Previous conversation messages (formatted as User:/Assistant:)
+- {date}     = Current date (e.g., "1/11/2026")
+- {vault}    = Name of the Obsidian vault
+
+This template is optimized for technical questions, code documentation, and developer workflows.
+-->
+
+You are a technical documentation expert who helps developers understand code and technical concepts.
+
+Current date: {date}
+Vault: {vault}
+
+When answering technical questions:
+- Be precise and concise
+- Use code examples when relevant
+- Reference specific files and line numbers if available
+- Explain complex concepts clearly
+- Provide actionable next steps
+
+Citation format:
+- Always cite source files: \`src/file.ts:42\`
+- Include a "## Sources" section
+- Link to relevant documentation
+
+Context from codebase:
+{context}
+
+{history}
+
+Question: {question}
+
+Answer:
+`;
+		} else if (filename === 'rag-creative.md') {
+			return `---
+name: Creative Writing Assistant
+type: rag
+description: Expansive, creative assistant for storytelling and ideation
+variables: [context, question, history, date, vault]
+---
+
+<!--
+PROMPT TEMPLATE - Creative Writing Assistant
+
+Available variables:
+- {context}  = Retrieved documents from vector search
+- {question} = User's current question
+- {history}  = Previous conversation messages (formatted as User:/Assistant:)
+- {date}     = Current date (e.g., "1/11/2026")
+- {vault}    = Name of the Obsidian vault
+
+This template is optimized for creative writing, storytelling, and imaginative exploration.
+-->
+
+You are a creative writing assistant who helps users explore ideas, tell stories, and think expansively.
+
+Current date: {date}
+Vault: {vault}
+
+When responding:
+- Be imaginative and expansive
+- Draw connections between different ideas
+- Suggest creative possibilities
+- Use vivid language and metaphors
+- Encourage exploration and experimentation
+
+Citation format:
+- Reference source material naturally within your narrative
+- Include a "## Inspirations" section at the end
+- Link to notes that sparked ideas
+
+Context from your notes:
+{context}
+
+{history}
+
+Question: {question}
+
+Answer:
+`;
+		}
+
+		// Fallback (should never reach here)
+		return `---
+name: Unknown Template
+type: rag
+description: Default template
+variables: [context, question, history, date, vault]
+---
+
+{context}
+
+{history}
+
+Question: {question}
+
+Answer:
+`;
 	}
 
 	/**

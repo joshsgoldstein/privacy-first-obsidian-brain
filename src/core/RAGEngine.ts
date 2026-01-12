@@ -11,6 +11,9 @@ import { App, TFile, Notice } from 'obsidian';
 import { DocumentLoader } from './DocumentLoader';
 import { VectorStore } from './VectorStore';
 import { createProvider } from '../providers';
+import { createTracer } from '../tracers';
+import { PromptManager } from '../prompts';
+import type { BaseTracer } from '../tracers';
 import type { Settings, StreamChunk, QueryOptions, LLMProvider, EmbeddingProvider, Message } from '../types';
 
 export class RAGEngine {
@@ -21,6 +24,8 @@ export class RAGEngine {
 	private documentLoader: DocumentLoader;
 	public vectorStore: VectorStore;
 	private provider: LLMProvider & EmbeddingProvider;
+	private tracer: BaseTracer;
+	public promptManager: PromptManager; // Manages markdown-based prompt templates with variable substitution
 
 	private isIndexing: boolean = false;
 	private isReady: boolean = false;
@@ -38,6 +43,12 @@ export class RAGEngine {
 
 		// Create vector store
 		this.vectorStore = new VectorStore(this.provider, settings, dataPath);
+
+		// Create tracer
+		this.tracer = createTracer(settings);
+
+		// Create prompt manager
+		this.promptManager = new PromptManager(app, settings, dataPath);
 	}
 
 	/**
@@ -159,6 +170,14 @@ export class RAGEngine {
 			return;
 		}
 
+		// Start trace
+		const trace = this.tracer.startTrace('RAG Query', {
+			question,
+			skipSearch: options?.skipSearch || false,
+		});
+
+		const traceStartTime = Date.now();
+
 		try {
 			// Merge options with settings
 			const searchMode = options?.searchMode || this.settings.searchMode;
@@ -170,17 +189,53 @@ export class RAGEngine {
 
 			console.log(`🔍 Query options - skipSearch: ${skipSearch}, useRAG: ${!skipSearch}`);
 
+			// Load prompt template from PromptManager
+			const promptTemplate = await this.promptManager.getSystemPrompt();
+
 			let results: any[] = [];
 			let context = '';
 
-			// 1. Retrieve relevant documents (unless skipped)
+			// 1. Retrieve relevant documents (unless skipped) - WITH TRACING
 			if (!skipSearch) {
 				console.log('🔎 Performing vector search...');
+
+				// Start retrieval span
+				const retrievalSpan = trace?.span({
+					name: 'Retrieval',
+					type: 'retrieval',
+					input: {
+						query: question,
+						mode: searchMode,
+						topK,
+					},
+				});
+
 				results = await this.vectorStore.similaritySearch(question, topK, {
 					mode: searchMode,
 					similarityThreshold,
 					fulltextThreshold,
 				});
+
+				// End retrieval span
+				if (retrievalSpan) {
+					retrievalSpan.update({
+						output: {
+							resultsCount: results.length,
+							topResults: results.slice(0, 3).map(r => ({
+								file: r.metadata.path,
+								score: r.score,
+							})),
+						},
+						metadata: {
+							searchMode,
+							topK,
+							avgScore: results.length > 0
+								? results.reduce((sum, r) => sum + (r.score || 0), 0) / results.length
+								: 0,
+						},
+					});
+					retrievalSpan.end();
+				}
 			} else {
 				console.log('⏭️ Skipping vector search (RAG disabled by user)');
 			}
@@ -196,11 +251,8 @@ export class RAGEngine {
 				context = "No relevant documents were found in the knowledge base. Answer the question using your general knowledge, and mention that you couldn't find specific information in the user's notes.";
 			}
 
-			// 3. Add conversation history if present
-			if (options?.conversationHistory && options.conversationHistory.length > 0) {
-				const history = this.formatConversationHistory(options.conversationHistory);
-				context = history + '\n\n' + context;
-			}
+			// 3. Conversation history is now handled via prompt variables (not concatenated here)
+			// This change allows prompts to control where history appears in the template
 
 			if (this.settings.verboseLogging) {
 				console.log(`Query: "${question}"`);
@@ -211,21 +263,67 @@ export class RAGEngine {
 				console.log(`Conversation history: ${options?.conversationHistory?.length || 0} messages`);
 			}
 
+			// 4. Render prompt with variables
+			// Substitutes {context}, {question}, {history}, {date}, {vault} in the template
+			const renderedPrompt = this.promptManager.renderPrompt(promptTemplate, {
+				context,      // Retrieved documents from vector search
+				question,     // User's current question
+				history: options?.conversationHistory && options.conversationHistory.length > 0
+					? this.formatConversationHistory(options.conversationHistory)
+					: '',       // Formatted conversation history (empty if none)
+				date: new Date().toLocaleDateString(), // Current date for temporal context
+				vault: this.app.vault.getName(),       // Vault name for personalization
+			});
+
+			if (this.settings.verboseLogging) {
+				console.log('📝 Using prompt template:', this.settings.activePromptTemplate);
+			}
+
 			// Yield status: search complete, now generating
 			yield {
 				type: 'status',
 				status: 'generating',
 			};
 
-			// 4. Generate response (streaming)
+			// 5. Generate response (streaming) - WITH TRACING
+			const generationSpan = trace?.span({
+				name: 'Generation',
+				type: 'llm',
+				input: {
+					prompt: question,
+					contextLength: context.length,
+					model: this.getModelName(),
+					temperature,
+					promptTemplate: this.settings.activePromptTemplate,
+				},
+			});
+
+			const generatedChunks: string[] = [];
+
 			for await (const chunk of this.provider.generateStream(question, context, {
 				temperature,
-				systemPrompt: options?.systemPrompt,
+				systemPrompt: renderedPrompt,
 			})) {
+				generatedChunks.push(chunk);
 				yield {
 					type: 'content',
 					content: chunk,
 				};
+			}
+
+			// End generation span
+			const fullResponse = generatedChunks.join('');
+			if (generationSpan) {
+				generationSpan.update({
+					output: { text: fullResponse },
+					metadata: {
+						model: this.getModelName(),
+						temperature,
+						chunkCount: generatedChunks.length,
+						charsGenerated: fullResponse.length,
+					},
+				});
+				generationSpan.end();
 			}
 
 			// 5. Yield sources at the end (if any)
@@ -239,8 +337,35 @@ export class RAGEngine {
 					})),
 				};
 			}
+
+			// End the full trace
+			if (trace) {
+				trace.update({
+					output: {
+						answer: fullResponse,
+						sources: results.map((r) => r.metadata.path),
+					},
+					metadata: {
+						resultsCount: results.length,
+						charsGenerated: fullResponse.length,
+					},
+				});
+				trace.end();
+				await this.tracer.flush();
+			}
 		} catch (error) {
 			console.error('Query error:', error);
+
+			// End trace with error
+			if (trace) {
+				trace.update({
+					output: { error: (error as Error).message },
+					metadata: { failed: true },
+				});
+				trace.end();
+				await this.tracer.flush();
+			}
+
 			yield {
 				type: 'error',
 				error: (error as Error).message,
@@ -263,6 +388,14 @@ export class RAGEngine {
 	 * Format conversation history for multi-turn context
 	 */
 	private formatConversationHistory(history: Message[]): string {
+		/**
+		 * Need to handle a compaction functionality here
+		 * save the compacted notes as a file in a folder structure of the chat
+		 * keep chat history file seperate in its current place and only load the last 10 messages 
+		 * and then go get the longer term chat history in the long term memory sotre
+		 */
+		// Need to handle a compaction functionality here
+
 		if (!history || history.length === 0) return '';
 
 		const formatted = history
@@ -344,6 +477,8 @@ export class RAGEngine {
 		// Update all components
 		this.documentLoader.updateSettings(settings);
 		this.vectorStore.updateSettings(settings);
+		this.tracer.updateSettings(settings);
+		this.promptManager.updateSettings(settings);
 
 		// Check if provider actually changed (by comparing settings, not objects)
 		const providerChanged = oldProvider !== settings.activeProvider;
@@ -393,6 +528,22 @@ export class RAGEngine {
 			isIndexing: this.isIndexing,
 			documentCount: this.vectorStore.getDocumentCount(),
 		};
+	}
+
+	/**
+	 * Get current generation model name
+	 */
+	private getModelName(): string {
+		switch (this.settings.activeProvider) {
+			case 'ollama':
+				return this.settings.ollamaModel;
+			case 'openai':
+				return this.settings.openaiModel;
+			case 'anthropic':
+				return this.settings.anthropicModel;
+			default:
+				return 'unknown';
+		}
 	}
 
 	/**

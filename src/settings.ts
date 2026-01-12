@@ -43,10 +43,20 @@ export const DEFAULT_SETTINGS: Settings = {
 	incognitoMode: false,
 
 	// Exclusions
-	excludePatterns: ['Archive/**', 'Templates/**'],
+	excludePatterns: ['.obsidian/**', 'Archive/**', 'Templates/**'],
 
 	// Advanced
 	verboseLogging: false,
+
+	// Prompts
+	activePromptTemplate: 'rag-default',
+
+	// Opik (LLM Observability) - OFF by default
+	opikEnabled: false,
+	opikUrl: 'http://localhost:5173/api',
+	opikApiKey: '',
+	opikProjectName: 'smart-second-brain',
+	opikWorkspaceName: '',
 };
 
 /**
@@ -541,9 +551,9 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Exclude Patterns')
-			.setDesc('Glob patterns for files to exclude (one per line, e.g., "Archive/**")')
+			.setDesc('Glob patterns for files to exclude (one per line). Note: .obsidian/** is excluded by default to prevent indexing config files.')
 			.addTextArea((text) => {
-				text.setPlaceholder('Archive/**\nTemplates/**')
+				text.setPlaceholder('.obsidian/**\nArchive/**\nTemplates/**')
 					.setValue(this.plugin.settings.excludePatterns.join('\n'))
 					.onChange(async (value) => {
 						this.plugin.settings.excludePatterns = value
@@ -613,6 +623,160 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 					this.plugin.settings.verboseLogging = value;
 					await this.plugin.saveSettings();
 				})
+			);
+
+		// ========================================================================
+		// System Prompts
+		// ========================================================================
+
+		containerEl.createEl('h2', { text: 'System Prompts' });
+
+		containerEl.createEl('p', {
+			text: 'Customize how the AI assistant responds. Prompts are stored as markdown files in the prompts/ folder.',
+			cls: 'setting-item-description',
+		});
+
+		new Setting(containerEl)
+			.setName('Active Prompt Template')
+			.setDesc('Select which prompt template to use for RAG queries')
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption('rag-default', 'Default (Helpful assistant)')
+					.addOption('rag-technical', 'Technical (Code-focused)')
+					.addOption('rag-creative', 'Creative (Storytelling)')
+					.setValue(this.plugin.settings.activePromptTemplate)
+					.onChange(async (value) => {
+						this.plugin.settings.activePromptTemplate = value;
+						await this.plugin.saveSettings();
+						new Notice(`Switched to ${value} prompt template`);
+					});
+			});
+
+		// Prompt preview
+		const previewContainer = containerEl.createDiv({ cls: 'prompt-preview-container' });
+		previewContainer.createEl('strong', { text: 'Preview:' });
+		const previewEl = previewContainer.createEl('pre', {
+			cls: 'prompt-preview',
+			text: 'Loading preview...',
+		});
+
+		// Load preview asynchronously
+		(async () => {
+			try {
+				const promptManager = this.plugin.ragEngine?.promptManager;
+				if (promptManager) {
+					const preview = await promptManager.getPromptPreview(
+						this.plugin.settings.activePromptTemplate
+					);
+					previewEl.setText(preview);
+				}
+			} catch (error) {
+				previewEl.setText('Error loading preview');
+			}
+		})();
+
+		// Available variables
+		const variablesContainer = containerEl.createDiv({ cls: 'prompt-variables' });
+		variablesContainer.createEl('strong', { text: 'Available Variables:' });
+		const variablesList = variablesContainer.createEl('ul');
+		const variables = [
+			'{context} - Retrieved documents from your notes',
+			'{question} - User\'s question',
+			'{history} - Conversation history',
+			'{date} - Current date',
+			'{vault} - Vault name',
+		];
+		variables.forEach(v => variablesList.createEl('li', { text: v }));
+
+		// Edit prompt button
+		new Setting(containerEl)
+			.setName('Edit Prompt File')
+			.setDesc('Open the active prompt file in your editor')
+			.addButton((button) =>
+				button.setButtonText('Edit').onClick(async () => {
+					const promptPath = `${this.plugin.manifest.dir}/prompts/${this.plugin.settings.activePromptTemplate}.md`;
+					const file = this.plugin.app.vault.getAbstractFileByPath(promptPath);
+					if (file) {
+						const leaf = this.plugin.app.workspace.getLeaf(false);
+						await leaf.openFile(file as any);
+					} else {
+						new Notice('Prompt file not found');
+					}
+				})
+			);
+
+		// ========================================================================
+		// Opik (LLM Observability)
+		// ========================================================================
+
+		containerEl.createEl('h2', { text: 'Opik (LLM Observability)' });
+
+		containerEl.createEl('p', {
+			text: 'Track and analyze your RAG queries, embeddings, and LLM calls. Supports local Opik installations or cloud at comet.com/opik',
+			cls: 'setting-item-description',
+		});
+
+		new Setting(containerEl)
+			.setName('Enable Opik Tracing')
+			.setDesc('OFF by default. Turn on to send telemetry to Opik for debugging and monitoring.')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.opikEnabled).onChange(async (value) => {
+					this.plugin.settings.opikEnabled = value;
+					await this.plugin.saveSettings();
+					new Notice(`Opik tracing ${value ? 'enabled' : 'disabled'}`);
+				})
+			);
+
+		new Setting(containerEl)
+			.setName('Opik URL')
+			.setDesc('URL for your Opik instance (local: http://localhost:5173/api, cloud: https://www.comet.com/opik/api)')
+			.addText((text) =>
+				text
+					.setPlaceholder('http://localhost:5173/api')
+					.setValue(this.plugin.settings.opikUrl)
+					.onChange(async (value) => {
+						this.plugin.settings.opikUrl = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Opik API Key')
+			.setDesc('Your Opik API key (may not be required for local installations)')
+			.addText((text) =>
+				text
+					.setPlaceholder('Enter API key')
+					.setValue(this.plugin.settings.opikApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.opikApiKey = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Opik Project Name')
+			.setDesc('Project name to organize your traces')
+			.addText((text) =>
+				text
+					.setPlaceholder('smart-second-brain')
+					.setValue(this.plugin.settings.opikProjectName)
+					.onChange(async (value) => {
+						this.plugin.settings.opikProjectName = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('Opik Workspace Name')
+			.setDesc('Optional: Workspace name (leave empty for default)')
+			.addText((text) =>
+				text
+					.setPlaceholder('my-workspace')
+					.setValue(this.plugin.settings.opikWorkspaceName)
+					.onChange(async (value) => {
+						this.plugin.settings.opikWorkspaceName = value;
+						await this.plugin.saveSettings();
+					})
 			);
 	}
 

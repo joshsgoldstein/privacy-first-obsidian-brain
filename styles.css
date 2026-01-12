@@ -842,3 +842,46 @@
 	background: var(--interactive-hover);
 	border-color: var(--interactive-accent);
 }
+
+/* ========================================================================
+   Prompt Preview (Settings UI)
+   ======================================================================== */
+
+.prompt-preview-container {
+	margin: 1em 0;
+	padding: 1em;
+	background: var(--background-secondary);
+	border-radius: 6px;
+}
+
+.prompt-preview {
+	margin-top: 0.5em;
+	padding: 1em;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	font-family: var(--font-monospace);
+	font-size: 0.85em;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-x: auto;
+	max-height: 300px;
+}
+
+.prompt-variables {
+	margin: 1em 0;
+	padding: 1em;
+	background: var(--background-secondary);
+	border-radius: 6px;
+}
+
+.prompt-variables ul {
+	margin-top: 0.5em;
+	padding-left: 1.5em;
+}
+
+.prompt-variables li {
+	margin: 0.3em 0;
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+}

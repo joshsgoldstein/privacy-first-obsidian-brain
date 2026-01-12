@@ -48,6 +48,16 @@ export interface Settings {
 
 	// Advanced
 	verboseLogging: boolean;
+
+	// Prompts
+	activePromptTemplate: string; // Which prompt template to use (e.g., 'rag-default', 'rag-technical')
+
+	// Opik (LLM Observability)
+	opikEnabled: boolean; // Enable Opik tracing (off by default)
+	opikUrl: string; // Opik URL (for local installations, e.g., http://localhost:5173/api)
+	opikApiKey: string; // Opik API key
+	opikProjectName: string; // Project name in Opik
+	opikWorkspaceName: string; // Workspace name in Opik
 }
 
 // ============================================================================

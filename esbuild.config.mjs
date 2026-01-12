@@ -31,7 +31,10 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
-		...builtinModules],
+		...builtinModules,
+		// Also include node: prefixed versions
+		...builtinModules.map(m => `node:${m}`)
+	],
 	format: "cjs",
 	target: "es2018",
 	logLevel: "info",
