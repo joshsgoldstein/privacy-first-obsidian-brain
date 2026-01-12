@@ -197,6 +197,10 @@ Best for: Balanced results combining both approaches
 - **Fulltext Threshold**: Minimum score for BM25 search (0-1, default 0)
 - **Top-K Results**: Number of documents to retrieve (1-20, default 5)
 - **Temperature**: LLM creativity (0-2, default 0.7)
+- **Hybrid Search Weights** (only shown when Search Mode = hybrid):
+  - **Keyword Weight**: Balance for BM25 keyword matching (0-1, default 0.8). Higher = prioritize exact word matches
+  - **Vector Weight**: Balance for semantic similarity (0-1, default 0.2). Higher = prioritize meaning over exact words
+  - Weights auto-balance to sum to 1.0
 
 ### Vector Store Management
 - **Index Status**: Live document count and indexing state (updates every 2 seconds)

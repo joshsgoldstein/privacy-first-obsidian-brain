@@ -311,7 +311,9 @@ export class VectorStore {
 		const similarityThreshold = options?.similarityThreshold ?? this.settings.similarityThreshold;
 		const fulltextThreshold = options?.fulltextThreshold ?? this.settings.fulltextThreshold;
 
-		console.log(`🔍 Search mode: ${mode}, query: "${query}"`);
+		console.log(`🔍 Search mode: ${mode}, query: "${query}", k: ${k}`);
+		console.log(`   Options passed:`, options || 'none');
+		console.log(`   Thresholds: similarity=${similarityThreshold}, fulltext=${fulltextThreshold}`);
 		console.log(`   Weights: text=${this.settings.hybridTextWeight}, vector=${this.settings.hybridVectorWeight}`);
 
 		try {

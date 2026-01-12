@@ -80,8 +80,13 @@ export class SearchModal extends Modal {
 		console.log(`\n🔍 Searching for: "${query}"\n`);
 
 		try {
-			// Search the vector store
-			const results = await this.ragEngine.vectorStore.similaritySearch(query, 10);
+			// Search the vector store using same settings as RAG
+			const settings = this.ragEngine.settings;
+			const results = await this.ragEngine.vectorStore.similaritySearch(query, settings.topK, {
+				mode: settings.searchMode,
+				similarityThreshold: settings.similarityThreshold,
+				fulltextThreshold: settings.fulltextThreshold,
+			});
 
 			console.log(`Found ${results.length} results:\n`);
 			results.forEach((result, i) => {
