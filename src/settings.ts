@@ -34,6 +34,8 @@ export const DEFAULT_SETTINGS: Settings = {
 	fulltextThreshold: 0,
 	topK: 5,
 	temperature: 0.7,
+	hybridTextWeight: 0.8, // Favor keyword matches
+	hybridVectorWeight: 0.2, // Secondary: semantic similarity
 
 	// UI
 	viewMode: 'comfy',
@@ -43,7 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	incognitoMode: false,
 
 	// Exclusions
-	excludePatterns: ['.obsidian/**', 'Archive/**', 'Templates/**'],
+	excludePatterns: ['.obsidian/**', 'Archive/**', 'Templates/**', 'Prompts/**'],
 
 	// Advanced
 	verboseLogging: false,
@@ -423,6 +425,47 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 					})
 			);
 
+		// Hybrid Search Weights (only shown in hybrid mode)
+		if (this.plugin.settings.searchMode === 'hybrid') {
+			containerEl.createEl('h4', { text: 'Hybrid Search Weights' });
+
+			new Setting(containerEl)
+				.setName('Keyword Weight')
+				.setDesc('Weight for keyword/BM25 search (0-1). Higher = prioritize exact matches.')
+				.addSlider((slider) =>
+					slider
+						.setLimits(0, 1, 0.05)
+						.setValue(this.plugin.settings.hybridTextWeight)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							this.plugin.settings.hybridTextWeight = value;
+							// Auto-adjust vector weight to sum to 1.0
+							this.plugin.settings.hybridVectorWeight = Math.round((1 - value) * 100) / 100;
+							await this.plugin.saveSettings();
+							// Refresh display to show updated vector weight
+							this.display();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName('Vector Weight')
+				.setDesc('Weight for semantic/vector search (0-1). Higher = prioritize meaning over exact words.')
+				.addSlider((slider) =>
+					slider
+						.setLimits(0, 1, 0.05)
+						.setValue(this.plugin.settings.hybridVectorWeight)
+						.setDynamicTooltip()
+						.onChange(async (value) => {
+							this.plugin.settings.hybridVectorWeight = value;
+							// Auto-adjust text weight to sum to 1.0
+							this.plugin.settings.hybridTextWeight = Math.round((1 - value) * 100) / 100;
+							await this.plugin.saveSettings();
+							// Refresh display to show updated text weight
+							this.display();
+						})
+				);
+		}
+
 		// ====================================================================
 		// Vector Store Management
 		// ====================================================================
@@ -478,7 +521,7 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 
 						try {
 							// Delete the vectorstore.json file
-							const storePath = `${this.plugin.app.vault.configDir}/plugins/obsidian-sample-plugin/vectorstore.json`;
+							const storePath = `${this.plugin.app.vault.configDir}/plugins/${this.plugin.manifest.id}/vectorstore.json`;
 							const fileExists = await this.plugin.app.vault.adapter.exists(storePath);
 
 							if (fileExists) {
@@ -551,9 +594,9 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Exclude Patterns')
-			.setDesc('Glob patterns for files to exclude (one per line). Note: .obsidian/** is excluded by default to prevent indexing config files.')
+			.setDesc('Glob patterns for files to exclude (one per line). Note: .obsidian/** and Prompts/** are excluded by default.')
 			.addTextArea((text) => {
-				text.setPlaceholder('.obsidian/**\nArchive/**\nTemplates/**')
+				text.setPlaceholder('.obsidian/**\nArchive/**\nTemplates/**\nPrompts/**')
 					.setValue(this.plugin.settings.excludePatterns.join('\n'))
 					.onChange(async (value) => {
 						this.plugin.settings.excludePatterns = value
@@ -688,19 +731,19 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 		];
 		variables.forEach(v => variablesList.createEl('li', { text: v }));
 
-		// Edit prompt button
+		// Edit prompt button - Opens file in Obsidian
 		new Setting(containerEl)
 			.setName('Edit Prompt File')
-			.setDesc('Open the active prompt file in your editor')
+			.setDesc('Open the active prompt template in Obsidian to customize it')
 			.addButton((button) =>
-				button.setButtonText('Edit').onClick(async () => {
-					const promptPath = `${this.plugin.manifest.dir}/prompts/${this.plugin.settings.activePromptTemplate}.md`;
+				button.setButtonText('Edit in Obsidian').onClick(async () => {
+					const promptPath = `Prompts/${this.plugin.settings.activePromptTemplate}.md`;
 					const file = this.plugin.app.vault.getAbstractFileByPath(promptPath);
 					if (file) {
 						const leaf = this.plugin.app.workspace.getLeaf(false);
 						await leaf.openFile(file as any);
 					} else {
-						new Notice('Prompt file not found');
+						new Notice(`❌ Prompt file not found: ${promptPath}`);
 					}
 				})
 			);

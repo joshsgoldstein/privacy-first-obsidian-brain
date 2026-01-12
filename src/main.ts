@@ -15,6 +15,7 @@ export default class SmartSecondBrainPlugin extends Plugin {
 	private statusBarItem: HTMLElement;
 	ragEngine: RAGEngine; // Public so ChatView can access it
 	private saveTimer: NodeJS.Timeout | null = null;
+	private excludePatternsUpdated: boolean = false; // Track if we updated exclusions during load
 
 	async onload() {
 		console.log('Loading Smart Second Brain plugin...');
@@ -29,13 +30,24 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		this.statusBarItem = this.addStatusBarItem();
 		this.statusBarItem.setText('🧠 Initializing...');
 
-		// Ensure prompts folder exists with default templates
-		const pluginDir = this.app.vault.configDir + '/plugins/obsidian-sample-plugin';
-		await this.ensurePromptsExist(pluginDir);
+		// Ensure prompts folder exists with default templates (in vault root)
+		await this.ensurePromptsExist();
 
-		// Initialize RAG Engine
+		// Check if we need to suggest index rebuild (after settings migration)
+		const needsRebuild = await this.checkIfIndexNeedsRebuild();
+
+		// Initialize RAG Engine (use actual plugin directory where this plugin is installed)
+		// @ts-ignore - manifest.dir is the actual folder name where plugin is installed
+		const pluginDir = this.manifest.dir ?
+			this.app.vault.configDir + '/plugins/' + this.manifest.dir :
+			this.app.vault.configDir + '/plugins/' + this.manifest.id;
 		this.ragEngine = new RAGEngine(this.app, this.settings, pluginDir);
 		await this.ragEngine.initialize();
+
+		// Show rebuild notice if needed
+		if (needsRebuild) {
+			new Notice('📝 Updated exclude patterns. Run "Rebuild Vector Store" command to remove system files from index.', 10000);
+		}
 
 		// Add ribbon icons
 		// Brain icon - opens quick Q&A modal
@@ -88,6 +100,7 @@ export default class SmartSecondBrainPlugin extends Plugin {
 			id: 'rebuild-index',
 			name: 'Rebuild Vector Store',
 			callback: async () => {
+				new Notice('Rebuilding vector store... This may take a while.', 5000);
 				await this.ragEngine.rebuild();
 			},
 		});
@@ -636,6 +649,29 @@ ${answer}
 			this.settings.ollamaEmbeddingModel = 'snowflake-arctic-embed:335m';
 			await this.saveData(this.settings);
 		}
+
+		// Migration: Add Prompts/** to exclude patterns if missing
+		const requiredExclusions = ['.obsidian/**', 'Prompts/**'];
+
+		for (const pattern of requiredExclusions) {
+			if (!this.settings.excludePatterns.includes(pattern)) {
+				console.log(`Adding ${pattern} to exclude patterns`);
+				this.settings.excludePatterns.push(pattern);
+				this.excludePatternsUpdated = true;
+			}
+		}
+
+		if (this.excludePatternsUpdated) {
+			await this.saveData(this.settings);
+			console.log('✅ Updated exclude patterns to include system folders');
+		}
+	}
+
+	/**
+	 * Check if index needs rebuild due to updated exclusions
+	 */
+	async checkIfIndexNeedsRebuild(): Promise<boolean> {
+		return this.excludePatternsUpdated;
 	}
 
 	/**
@@ -652,40 +688,39 @@ ${answer}
 
 	/**
 	 * Ensure prompts folder exists and contains default templates
+	 * Creates prompts in vault root (Prompts/) for easy editing
 	 */
-	async ensurePromptsExist(pluginDir: string): Promise<void> {
-		const promptsPath = `${pluginDir}/prompts`;
+	async ensurePromptsExist(): Promise<void> {
+		const promptsFolder = 'Prompts';
 
 		try {
 			// Check if prompts folder exists
-			const promptsFolder = this.app.vault.getAbstractFileByPath(promptsPath);
+			const folder = this.app.vault.getAbstractFileByPath(promptsFolder);
 
-			if (!promptsFolder) {
+			if (!folder) {
 				console.log('📝 Prompts folder not found, creating with default templates...');
 
-				// Create prompts folder using Node.js fs (Obsidian adapter)
-				const { adapter } = this.app.vault;
-				await adapter.mkdir(promptsPath);
+				// Create prompts folder in vault root
+				await this.app.vault.createFolder(promptsFolder);
 
 				// Create default prompt templates
-				await this.createDefaultPrompts(adapter, promptsPath);
+				await this.createDefaultPromptsInVault(promptsFolder);
 
-				console.log('✅ Default prompts created successfully');
-				new Notice('📝 Created default prompt templates', 3000);
+				console.log('✅ Default prompts created successfully in vault');
+				new Notice('📝 Created Prompts folder with 3 templates - edit them to customize!', 5000);
 			} else {
 				// Folder exists, check if templates exist
 				const requiredPrompts = ['rag-default.md', 'rag-technical.md', 'rag-creative.md'];
-				const { adapter } = this.app.vault;
 				let missingCount = 0;
 
 				for (const promptFile of requiredPrompts) {
-					const promptPath = `${promptsPath}/${promptFile}`;
-					const exists = await adapter.exists(promptPath);
+					const promptPath = `${promptsFolder}/${promptFile}`;
+					const file = this.app.vault.getAbstractFileByPath(promptPath);
 
-					if (!exists) {
+					if (!file) {
 						console.log(`📝 Missing prompt template: ${promptFile}, creating...`);
 						const content = this.getDefaultPromptContent(promptFile);
-						await adapter.write(promptPath, content);
+						await this.app.vault.create(promptPath, content);
 						missingCount++;
 					}
 				}
@@ -693,6 +728,8 @@ ${answer}
 				if (missingCount > 0) {
 					console.log(`✅ Created ${missingCount} missing prompt template(s)`);
 					new Notice(`📝 Created ${missingCount} missing prompt template(s)`, 3000);
+				} else if (this.settings.verboseLogging) {
+					console.log('✅ All prompt templates present');
 				}
 			}
 		} catch (error) {
@@ -702,9 +739,9 @@ ${answer}
 	}
 
 	/**
-	 * Create all default prompt templates
+	 * Create all default prompt templates in vault
 	 */
-	private async createDefaultPrompts(adapter: any, promptsPath: string): Promise<void> {
+	private async createDefaultPromptsInVault(promptsFolder: string): Promise<void> {
 		const prompts = [
 			{ file: 'rag-default.md', content: this.getDefaultPromptContent('rag-default.md') },
 			{ file: 'rag-technical.md', content: this.getDefaultPromptContent('rag-technical.md') },
@@ -712,9 +749,9 @@ ${answer}
 		];
 
 		for (const prompt of prompts) {
-			const path = `${promptsPath}/${prompt.file}`;
-			await adapter.write(path, prompt.content);
-			console.log(`Created: ${prompt.file}`);
+			const path = `${promptsFolder}/${prompt.file}`;
+			await this.app.vault.create(path, prompt.content);
+			console.log(`Created: ${path}`);
 		}
 	}
 

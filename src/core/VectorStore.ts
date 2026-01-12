@@ -49,6 +49,7 @@ export class VectorStore {
 				tokenizer: {
 					stemming: true, // Better full-text search
 					stopWords: false, // Keep all words for better note search
+					language: 'english',
 				},
 			},
 		});
@@ -311,6 +312,7 @@ export class VectorStore {
 		const fulltextThreshold = options?.fulltextThreshold ?? this.settings.fulltextThreshold;
 
 		console.log(`🔍 Search mode: ${mode}, query: "${query}"`);
+		console.log(`   Weights: text=${this.settings.hybridTextWeight}, vector=${this.settings.hybridVectorWeight}`);
 
 		try {
 			let results: any;
@@ -390,6 +392,13 @@ export class VectorStore {
 				} else {
 					console.log(`Hybrid search with embedding dimensions: ${queryEmbedding.length}`);
 
+					console.log('   Hybrid search config:', {
+						properties: ['content', 'path', 'noteName', 'tags'],
+						boost: { noteName: 3, path: 2, tags: 2, content: 1 },
+						hybridWeights: { text: this.settings.hybridTextWeight, vector: this.settings.hybridVectorWeight },
+						limit: k,
+					});
+
 					results = await oramaSearch(this.db, {
 						mode: 'hybrid',
 						term: query,
@@ -408,7 +417,13 @@ export class VectorStore {
 							tags: 2,
 							content: 1,
 						},
+						hybridWeights: {
+							text: this.settings.hybridTextWeight,
+							vector: this.settings.hybridVectorWeight,
+						},
 					});
+
+					console.log('   Raw Orama results count:', results.count, 'hits:', results.hits.length);
 				}
 			}
 
@@ -423,8 +438,14 @@ export class VectorStore {
 				score: hit.score,
 			}));
 
-			if (this.settings.verboseLogging) {
-				console.log(`Search (${mode}): Found ${documents.length} results for "${query}"`);
+			// Always log search results for debugging
+			console.log('📊 Search (' + mode + '): Found ' + documents.length + ' results for "' + query + '"');
+			if (documents.length > 0) {
+				console.log('   Top 3 results:');
+				for (let i = 0; i < Math.min(3, documents.length); i++) {
+					const doc = documents[i];
+					console.log('   ' + (i + 1) + '. Path: ' + doc.metadata.path + ', Score: ' + (doc.score || 0).toFixed(3));
+				}
 			}
 
 			return documents;
@@ -444,17 +465,30 @@ export class VectorStore {
 		}
 
 		try {
+			console.log(`💾 Saving vector store to: ${this.storePath}`);
+
+			// Ensure parent directory exists
+			const parentDir = this.storePath.substring(0, this.storePath.lastIndexOf('/'));
+			const dirExists = await fs.adapter.exists(parentDir);
+			if (!dirExists) {
+				console.log(`📁 Creating directory: ${parentDir}`);
+				await fs.adapter.mkdir(parentDir);
+			}
+
 			const data = await save(this.db);
 			const jsonData = JSON.stringify(data);
 
 			// Write to file using Obsidian's adapter
 			await fs.adapter.write(this.storePath, jsonData);
 
+			console.log(`✅ Vector store saved successfully to ${this.storePath}`);
+
 			if (this.settings.verboseLogging) {
 				console.log(`Vector store saved to ${this.storePath}`);
 			}
 		} catch (error) {
-			console.error('Failed to save vector store:', error);
+			console.error(`❌ Failed to save vector store to ${this.storePath}:`, error);
+			new Notice(`Failed to save vector store: ${error.message}`, 5000);
 		}
 	}
 

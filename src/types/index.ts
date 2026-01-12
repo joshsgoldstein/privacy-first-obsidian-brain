@@ -35,6 +35,8 @@ export interface Settings {
 	fulltextThreshold: number; // 0-1, percentage of terms that must match (default 0)
 	topK: number; // How many documents to retrieve
 	temperature: number; // LLM creativity (0-2)
+	hybridTextWeight: number; // 0-1, weight for keyword search in hybrid mode (default 0.8)
+	hybridVectorWeight: number; // 0-1, weight for vector search in hybrid mode (default 0.2)
 
 	// UI preferences
 	viewMode: 'comfy' | 'compact';

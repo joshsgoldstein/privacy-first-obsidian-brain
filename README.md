@@ -58,6 +58,14 @@ An intelligent RAG (Retrieval-Augmented Generation) plugin for Obsidian that tra
   - 🔍 Search icon - Opens vector search modal (debugging)
 - **Status Bar**: Shows document count and indexing status
 
+### 📝 **Custom Prompt Templates**
+- **Visible Prompts Folder**: `Prompts/` folder created at vault root for easy editing
+- **3 Built-in Templates**: Default, Technical, and Creative assistant modes
+- **Edit in Obsidian**: Click "Edit in Obsidian" button in settings to customize
+- **Variable Substitution**: Use `{context}`, `{question}`, `{history}`, `{date}`, `{vault}` in templates
+- **Version Control**: Markdown files work seamlessly with Git
+- **Hot Reload**: Changes take effect immediately on next query
+
 ### ⚙️ **Flexible Configuration**
 - Multiple search modes (fulltext, vector, hybrid)
 - Adjustable similarity and fulltext thresholds
@@ -65,6 +73,7 @@ An intelligent RAG (Retrieval-Augmented Generation) plugin for Obsidian that tra
 - Temperature control for LLM creativity (0-2)
 - Provider switching with full settings per provider
 - File exclusion patterns (glob-based)
+- Custom prompt templates with live preview
 
 ## Prerequisites
 
@@ -128,6 +137,14 @@ Choose **one** of the following:
    - Click sources to jump to relevant notes
    - Chats auto-save to `Chats/` folder - reload anytime with 📂 Load button
 
+4. **Customize Prompts (Optional)**
+   - A `Prompts/` folder is automatically created in your vault root
+   - Contains 3 templates: `rag-default.md`, `rag-technical.md`, `rag-creative.md`
+   - Open Settings → Smart Second Brain → System Prompts
+   - Select a template and click "Edit in Obsidian"
+   - Modify instructions, examples, or citation format
+   - Changes apply immediately - no restart needed!
+
 ## Search Modes
 
 ### Full-text (BM25)
@@ -186,8 +203,23 @@ Best for: Balanced results combining both approaches
 - **Clear & Rebuild Index**: Deletes vector store and rebuilds from scratch
 - **Quick Rebuild**: Re-indexes without clearing (faster)
 
+### System Prompts
+- **Active Prompt Template**: Choose between Default, Technical, or Creative modes
+- **Live Preview**: See first 500 characters of active prompt
+- **Available Variables**:
+  - `{context}` - Retrieved documents from vector search
+  - `{question}` - User's current question
+  - `{history}` - Previous conversation messages
+  - `{date}` - Current date (e.g., "1/12/2026")
+  - `{vault}` - Name of your Obsidian vault
+- **Edit Button**: Opens active prompt in Obsidian for customization
+- **Location**: All prompts stored in `Prompts/` folder at vault root
+
 ### Advanced
 - **Exclude Patterns**: Glob patterns to exclude files (e.g., `Archive/**`)
+  - `.obsidian/**` and `Prompts/**` are excluded by default
+  - One pattern per line
+  - Changes require index rebuild to take effect
 - **Verbose Logging**: Enable detailed console logs for debugging
 - **Incognito Mode**: Force local-only processing (future feature)
 
@@ -218,6 +250,19 @@ Best for: Balanced results combining both approaches
 - **AnthropicProvider**: Claude models with Voyage AI embeddings
 - Dynamic dimension detection and validation
 - Streaming support for real-time responses
+
+**PromptManager** (`src/prompts/PromptManager.ts`)
+- Loads prompt templates from `Prompts/` folder in vault root
+- Parses markdown with YAML frontmatter
+- Variable substitution: `{context}`, `{question}`, `{history}`, `{date}`, `{vault}`
+- Hot reload support - changes apply immediately
+- Fallback prompts if files not found
+
+**Tracers** (`src/tracers/`)
+- **BaseTracer**: Abstract interface for observability
+- **OpikTracer**: LLM observability with Opik (local or cloud)
+- **NoOpTracer**: Null object pattern for disabled tracing
+- Factory pattern for easy extension
 
 ### Data Flow
 
@@ -255,6 +300,14 @@ src/
 │   ├── OpenAIProvider.ts     # OpenAI implementation
 │   ├── AnthropicProvider.ts  # Anthropic + Voyage AI implementation
 │   └── index.ts              # Provider factory
+├── prompts/
+│   ├── PromptManager.ts      # Prompt loading & variable substitution
+│   └── index.ts              # Export interface
+├── tracers/
+│   ├── BaseTracer.ts         # Tracer interface
+│   ├── OpikTracer.ts         # Opik observability implementation
+│   ├── NoOpTracer.ts         # Null object for disabled state
+│   └── index.ts              # Tracer factory
 ├── ui/
 │   ├── ChatView.ts           # Persistent chat sidebar interface
 │   └── SearchModal.ts        # Search UI component (debugging)
@@ -264,6 +317,11 @@ src/
 │   └── index.ts              # TypeScript definitions
 ├── settings.ts               # Settings UI
 └── main.ts                   # Plugin entry point
+
+Prompts/ (Vault Root)
+├── rag-default.md            # Default helpful assistant
+├── rag-technical.md          # Code-focused developer mode
+└── rag-creative.md           # Creative writing assistant
 ```
 
 ### Key Technologies
@@ -326,6 +384,26 @@ src/
 **Problem**: RAG toggle (octopus) not working
 **Solution**: Check console logs - should show "Skipping vector search (RAG disabled by user)" when toggle is off.
 
+### Prompt Issues
+
+**Problem**: "Prompt file not found" error
+**Solution**:
+1. Check that `Prompts/` folder exists in vault root
+2. Run "Rebuild Vector Store" command if folder was created after plugin install
+3. Files should be: `rag-default.md`, `rag-technical.md`, `rag-creative.md`
+
+**Problem**: Prompts getting indexed into vector store
+**Solution**:
+1. Check Settings → File Exclusions - should include `Prompts/**`
+2. Plugin auto-migrates old settings to add this exclusion
+3. If still happening, run "Rebuild Vector Store" to clean index
+
+**Problem**: Changes to prompts not taking effect
+**Solution**:
+1. Changes apply immediately - just ask a new question
+2. Check that you saved the file (Cmd+S / Ctrl+S)
+3. Verify you're editing the correct template (check active template in settings)
+
 ## Roadmap
 
 ### Phase 1 - Foundation ✅ COMPLETE
@@ -347,10 +425,12 @@ src/
 - [x] Auto-save conversations
 
 ### Phase 3 - Advanced Features
+- [x] **Custom prompt templates** with variable substitution
+- [x] **LLM Observability** with Opik tracing support
 - [ ] Advanced filtering (date ranges, tags, folders)
 - [ ] Search history and bookmarked queries
 - [ ] Export conversations as markdown
-- [ ] Custom system prompts per folder
+- [ ] Custom system prompts per folder/tag
 - [ ] Batch operations and optimizations
 
 ### Future Ideas
@@ -359,6 +439,82 @@ src/
 - [ ] Voice input for questions
 - [ ] Suggested questions based on recent edits
 - [ ] Plugin API for extensibility
+
+## Packaging for Other Vaults
+
+To use this plugin in multiple Obsidian vaults:
+
+### Method 1: Direct Copy (Recommended for Development)
+
+1. **Build the plugin:**
+   ```bash
+   npm run build
+   ```
+
+2. **Copy to target vault:**
+   ```bash
+   # Copy the entire plugin folder to target vault
+   cp -r /path/to/this/vault/.obsidian/plugins/obsidian-sample-plugin \
+         /path/to/target/vault/.obsidian/plugins/
+   ```
+
+3. **Enable in target vault:**
+   - Open target vault in Obsidian
+   - Go to Settings → Community Plugins
+   - Enable "Smart Second Brain"
+   - Configure your provider settings
+
+4. **Prompts folder:**
+   - `Prompts/` folder will be created automatically in the target vault
+   - Each vault can have its own customized prompts
+
+### Method 2: Symlink (For Development Across Vaults)
+
+```bash
+# Build once
+cd /path/to/dev/vault/.obsidian/plugins/obsidian-sample-plugin
+npm run build
+
+# Create symlink in other vault
+ln -s /path/to/dev/vault/.obsidian/plugins/obsidian-sample-plugin \
+      /path/to/target/vault/.obsidian/plugins/obsidian-sample-plugin
+```
+
+**Benefits:** Changes build once and apply to all vaults
+**Drawback:** All vaults share same plugin code (but not data/settings)
+
+### Method 3: Release Build (For Distribution)
+
+1. **Create a release:**
+   ```bash
+   npm run build
+   zip -r smart-second-brain.zip manifest.json main.js styles.css
+   ```
+
+2. **Install in any vault:**
+   - Extract zip to `.obsidian/plugins/smart-second-brain/`
+   - Reload Obsidian
+   - Enable plugin
+
+### What Gets Copied vs. Created
+
+**Copied (plugin code):**
+- `main.js` - Bundled plugin code
+- `manifest.json` - Plugin metadata
+- `styles.css` - UI styling
+
+**Created per vault (user data):**
+- `Prompts/` folder at vault root (with 3 default templates)
+- `Chats/` folder at vault root (saved conversations)
+- `QnA/` folder at vault root (saved Q&A notes)
+- `vectorstore.json` in plugin data folder (indexed documents)
+- Settings in Obsidian's data.json
+
+**Note:** Each vault maintains its own:
+- Vector index (different documents)
+- Prompts (can be customized per vault)
+- Chats and Q&A history
+- Settings (different API keys, models, etc.)
 
 ## Contributing
 

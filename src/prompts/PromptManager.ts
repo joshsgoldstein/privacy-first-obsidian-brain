@@ -1,7 +1,7 @@
 /**
  * PromptManager - Manages system prompts with markdown files and variable substitution
  *
- * Loads prompts from markdown files in the prompts/ directory.
+ * Loads prompts from markdown files in the Prompts/ folder at vault root.
  * Supports frontmatter metadata and variable substitution.
  */
 
@@ -39,16 +39,17 @@ export interface PromptVariables {
 
 /**
  * PromptManager - Loads and renders prompts with variable substitution
+ * Prompts are stored in Prompts/ folder at vault root for easy editing
  */
 export class PromptManager {
 	private app: App;
 	private settings: Settings;
-	private pluginDir: string;
+	private promptsFolder: string = 'Prompts'; // Vault root folder
 
 	constructor(app: App, settings: Settings, pluginDir: string) {
 		this.app = app;
 		this.settings = settings;
-		this.pluginDir = pluginDir;
+		// pluginDir parameter kept for backward compatibility but not used
 	}
 
 	/**
@@ -56,7 +57,7 @@ export class PromptManager {
 	 */
 	async getSystemPrompt(): Promise<string> {
 		const promptName = this.settings.activePromptTemplate || 'rag-default';
-		const promptPath = normalizePath(`${this.pluginDir}/prompts/${promptName}.md`);
+		const promptPath = `${this.promptsFolder}/${promptName}.md`;
 
 		try {
 			const file = this.app.vault.getAbstractFileByPath(promptPath);
@@ -101,8 +102,7 @@ export class PromptManager {
 	 * List available prompt templates
 	 */
 	async listPrompts(): Promise<Array<{ name: string; metadata: PromptMetadata }>> {
-		const promptsDir = normalizePath(`${this.pluginDir}/prompts`);
-		const dir = this.app.vault.getAbstractFileByPath(promptsDir);
+		const dir = this.app.vault.getAbstractFileByPath(this.promptsFolder);
 
 		if (!dir) {
 			return [];
@@ -133,7 +133,7 @@ export class PromptManager {
 	 * Get prompt preview for settings UI
 	 */
 	async getPromptPreview(promptName: string): Promise<string> {
-		const promptPath = normalizePath(`${this.pluginDir}/prompts/${promptName}.md`);
+		const promptPath = `${this.promptsFolder}/${promptName}.md`;
 
 		try {
 			const file = this.app.vault.getAbstractFileByPath(promptPath);
