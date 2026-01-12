@@ -521,7 +521,8 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 
 						try {
 							// Delete the vectorstore.json file
-							const storePath = `${this.plugin.app.vault.configDir}/plugins/${this.plugin.manifest.id}/vectorstore.json`;
+							const pluginFolderName = this.plugin.manifest.dir || this.plugin.manifest.id;
+							const storePath = `${this.plugin.app.vault.configDir}/plugins/${pluginFolderName}/vectorstore.json`;
 							const fileExists = await this.plugin.app.vault.adapter.exists(storePath);
 
 							if (fileExists) {
