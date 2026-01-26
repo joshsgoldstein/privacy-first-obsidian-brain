@@ -531,6 +531,13 @@ export class RAGEngine {
 	}
 
 	/**
+	 * Get current settings
+	 */
+	getSettings(): Settings {
+		return this.settings;
+	}
+
+	/**
 	 * Get current generation model name
 	 */
 	private getModelName(): string {
@@ -550,8 +557,64 @@ export class RAGEngine {
 	 * Clear all data and reinitialize
 	 */
 	async rebuild(): Promise<void> {
-		await this.vectorStore.clear();
+		console.log('🔄 Starting rebuild...');
+
+		const vectorStorePath = `${this.dataPath}/vectorstore.json`;
+		const backupPath = `${this.dataPath}/vectorstore.backup.json`;
+
+		// 1. Backup old vectorstore file before deleting
+		console.log(`💾 Creating backup of existing vectorstore...`);
+		try {
+			const exists = await this.app.vault.adapter.exists(vectorStorePath);
+			if (exists) {
+				const oldData = await this.app.vault.adapter.read(vectorStorePath);
+				await this.app.vault.adapter.write(backupPath, oldData);
+				console.log(`✅ Backup created at: ${backupPath}`);
+
+				// Delete the old vectorstore
+				await this.app.vault.adapter.remove(vectorStorePath);
+				console.log('✅ Old vectorstore file deleted');
+			} else {
+				console.log('ℹ️ No existing vectorstore file to backup');
+			}
+		} catch (error) {
+			console.warn('Failed to backup/delete old vectorstore file:', error);
+		}
+
+		// 2. Recreate provider with current settings to ensure proper configuration
+		console.log('🔄 Recreating provider with current settings...');
+		this.provider = createProvider(this.settings);
+
+		// 3. Re-fetch dimensions from provider in case embedding model changed
+		if ('fetchDimensions' in this.provider && typeof this.provider.fetchDimensions === 'function') {
+			console.log('📏 Re-fetching embedding dimensions from provider...');
+			await (this.provider as any).fetchDimensions();
+			const newDimensions = this.provider.getDimensions();
+			console.log(`✅ Provider now reports ${newDimensions}D embeddings`);
+		}
+
+		// 4. Create a new VectorStore with updated provider to ensure schema matches
+		console.log('🏗️ Creating fresh vector store with current provider settings...');
+		this.vectorStore = new VectorStore(this.provider, this.settings, this.dataPath);
+		await this.vectorStore.initialize();
+
 		this.isReady = false;
-		await this.indexVault();
+		console.log('📚 Starting vault indexing...');
+
+		try {
+			// indexVault() will save the vector store at the end
+			await this.indexVault();
+
+			// 5. Delete backup after successful rebuild
+			console.log('🗑️ Deleting backup file...');
+			const backupExists = await this.app.vault.adapter.exists(backupPath);
+			if (backupExists) {
+				await this.app.vault.adapter.remove(backupPath);
+				console.log('✅ Backup file deleted');
+			}
+		} catch (error) {
+			console.error('❌ Rebuild failed, backup preserved at:', backupPath);
+			throw error;
+		}
 	}
 }

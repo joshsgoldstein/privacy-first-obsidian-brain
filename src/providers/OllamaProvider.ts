@@ -25,18 +25,8 @@ const OLLAMA_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 	'codellama:34b': 16384,
 };
 
-/**
- * Embedding dimensions for Ollama embedding models
- */
-const OLLAMA_EMBEDDING_DIMENSIONS: Record<string, number> = {
-	'nomic-embed-text': 768,
-	'mxbai-embed-large': 1024,
-	'all-minilm': 384,
-	'snowflake-arctic-embed': 1024,
-	'snowflake-arctic-embed:335m': 1024,
-	'snowflake-arctic-embed:110m': 1024,
-	'snowflake-arctic-embed:33m': 1024,
-};
+// REMOVED: Static embedding dimensions lookup
+// Dimensions should ALWAYS be fetched dynamically from Ollama API
 
 export class OllamaProvider extends BaseFullProvider {
 	readonly name = 'Ollama';
@@ -54,6 +44,13 @@ export class OllamaProvider extends BaseFullProvider {
 	configure(config: ProviderConfig): void {
 		if (config.baseUrl) this.baseUrl = config.baseUrl;
 		if (config.model) this.model = config.model;
+
+		// Clear cached dimensions if embedding model changes
+		if (config.embeddingModel && config.embeddingModel !== this.embeddingModel) {
+			console.log(`🔄 Embedding model changed: ${this.embeddingModel} → ${config.embeddingModel}`);
+			this.cachedDimensions = null; // Force re-fetch
+		}
+
 		if (config.embeddingModel) this.embeddingModel = config.embeddingModel;
 		if (config.temperature !== undefined) this.temperature = config.temperature;
 	}
@@ -272,7 +269,7 @@ export class OllamaProvider extends BaseFullProvider {
 
 	/**
 	 * Get embedding dimensions for configured model
-	 * Queries Ollama API dynamically instead of using static lookup
+	 * MUST call fetchDimensions() first to populate cache
 	 */
 	getDimensions(): number {
 		// Return cached value if available
@@ -280,14 +277,16 @@ export class OllamaProvider extends BaseFullProvider {
 			return this.cachedDimensions;
 		}
 
-		// Fallback to static lookup while we fetch dynamically
-		// This will be updated by fetchDimensions()
-		return OLLAMA_EMBEDDING_DIMENSIONS[this.embeddingModel] || 768;
+		// No static fallback - throw error to make it clear dimensions must be fetched
+		throw new Error(
+			`Embedding dimensions not fetched for model "${this.embeddingModel}". ` +
+			`Call fetchDimensions() first or check if model is running.`
+		);
 	}
 
 	/**
 	 * Fetch embedding dimensions from Ollama API
-	 * This should be called after configuration to get actual dimensions
+	 * This MUST be called after configuration to get actual dimensions
 	 */
 	async fetchDimensions(): Promise<number> {
 		try {
@@ -304,28 +303,57 @@ export class OllamaProvider extends BaseFullProvider {
 			});
 
 			if (!response.ok) {
-				console.warn(`Failed to fetch model details from Ollama, using fallback`);
-				return this.getDimensions();
+				const errorText = await response.text();
+				throw new Error(
+					`Failed to fetch model details from Ollama (${response.status}): ${errorText}. ` +
+					`Ensure model "${this.embeddingModel}" is pulled: ollama pull ${this.embeddingModel}`
+				);
 			}
 
 			const data = await response.json();
 
-			// Parse dimensions from model info
-			// Ollama returns dimensions in different places depending on the model
-			const dimensions =
-				data.details?.embedding_length ||
-				data.model_info?.['llama.embedding_length'] ||
-				data.model_info?.['embedding.size'] ||
-				OLLAMA_EMBEDDING_DIMENSIONS[this.embeddingModel] ||
-				768;
+			// Get architecture from model_info (e.g., "bert", "llama", "gemma")
+			const architecture = data.model_info?.['general.architecture'];
+			console.log(`📐 Model architecture: ${architecture}`);
 
-			console.log(`✅ Found ${this.embeddingModel} dimensions: ${dimensions}`);
+			// Try multiple paths to find embedding dimensions
+			// Pattern: {architecture}.embedding_length (e.g., bert.embedding_length, llama.embedding_length)
+			let dimensions: number | undefined;
+
+			if (architecture) {
+				// Try architecture-specific key first (e.g., bert.embedding_length)
+				dimensions = data.model_info?.[`${architecture}.embedding_length`];
+			}
+
+			// Fallback paths for other model structures
+			if (!dimensions) {
+				dimensions =
+					data.details?.embedding_length ||
+					data.model_info?.['embedding.size'] ||
+					data.model_info?.['embedding_length'];
+			}
+
+			if (!dimensions) {
+				console.error('❌ Could not find embedding dimensions in model info:', {
+					architecture,
+					model_info_keys: Object.keys(data.model_info || {}),
+					details: data.details
+				});
+				throw new Error(
+					`Could not determine embedding dimensions for model "${this.embeddingModel}". ` +
+					`Expected key "${architecture}.embedding_length" not found in model_info.`
+				);
+			}
+
+			console.log(`✅ Found ${this.embeddingModel} dimensions: ${dimensions}D (from ${architecture}.embedding_length)`);
 
 			this.cachedDimensions = dimensions;
 			return dimensions;
 		} catch (error) {
-			console.error('Failed to fetch dimensions from Ollama:', error);
-			return this.getDimensions(); // Fallback
+			console.error('❌ Failed to fetch dimensions from Ollama:', error);
+			// Clear cache on error to force retry next time
+			this.cachedDimensions = null;
+			throw error;
 		}
 	}
 
