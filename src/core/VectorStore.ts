@@ -446,7 +446,9 @@ export class VectorStore {
 				console.log('   Top 3 results:');
 				for (let i = 0; i < Math.min(3, documents.length); i++) {
 					const doc = documents[i];
-					console.log('   ' + (i + 1) + '. Path: ' + doc.metadata.path + ', Score: ' + (doc.score || 0).toFixed(3));
+					if (doc) {
+						console.log('   ' + (i + 1) + '. Path: ' + doc.metadata.path + ', Score: ' + (doc.score || 0).toFixed(3));
+					}
 				}
 			}
 
@@ -490,7 +492,7 @@ export class VectorStore {
 			}
 		} catch (error) {
 			console.error(`❌ Failed to save vector store to ${this.storePath}:`, error);
-			new Notice(`Failed to save vector store: ${error.message}`, 5000);
+			new Notice(`Failed to save vector store: ${(error as Error).message}`, 5000);
 		}
 	}
 

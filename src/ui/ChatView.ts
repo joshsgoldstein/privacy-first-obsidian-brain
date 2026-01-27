@@ -621,15 +621,24 @@ export class ChatView extends ItemView {
 			await this.app.vault.createFolder(folder);
 		}
 
-		// Create the note
-		await this.app.vault.create(filePath, content);
+		// Check if file already exists (can happen with rapid auto-saves)
+		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+		if (existingFile && existingFile instanceof TFile) {
+			// File already exists, modify it instead
+			await this.app.vault.modify(existingFile, content);
+			if (this.plugin.settings.verboseLogging) {
+				console.log(`Updated existing chat file: ${filePath}`);
+			}
+		} else {
+			// Create the note
+			await this.app.vault.create(filePath, content);
+			if (this.plugin.settings.verboseLogging) {
+				console.log(`Created new chat file: ${filePath}`);
+			}
+		}
 
 		// Store the file path for future auto-saves
 		this.currentChatFile = filePath;
-
-		if (this.plugin.settings.verboseLogging) {
-			console.log(`Created new chat file: ${filePath}`);
-		}
 	}
 
 	/**

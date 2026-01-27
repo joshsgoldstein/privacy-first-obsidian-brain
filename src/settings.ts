@@ -88,9 +88,6 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// Get RAG engine reference for use throughout settings
-		const ragEngine = (this.plugin as any).ragEngine;
-
 		// Header
 		containerEl.createEl('h2', { text: 'Smart Second Brain Settings' });
 
@@ -473,14 +470,15 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 		containerEl.createEl('h3', { text: 'Vector Store Management' });
 
 		// Show current index status with auto-update
-		if (ragEngine) {
+		if (this.plugin.ragEngine) {
 			const statusSetting = new Setting(containerEl)
 				.setName('Index Status')
 				.setClass('smart-brain-status');
 
 			// Function to update status
 			const updateStatus = () => {
-				const status = ragEngine.getStatus();
+				const status = this.plugin.ragEngine?.getStatus();
+				if (!status) return;
 				const statusDesc = status.isIndexing
 					? `Currently indexing... (${status.documentCount} documents)`
 					: status.isReady
@@ -503,51 +501,33 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 		// Clear and rebuild index button
 		new Setting(containerEl)
 			.setName('Clear & Rebuild Index')
-			.setDesc('Delete the vector store and rebuild from scratch')
+			.setDesc('Create a fresh vector store and rebuild from scratch')
 			.addButton((button) =>
 				button
 					.setButtonText('Clear & Rebuild')
 					.setWarning()
 					.onClick(async () => {
-						button.setButtonText('Clearing...');
-						button.setDisabled(true);
-
-						if (!ragEngine) {
+						if (!this.plugin.ragEngine) {
 							new Notice('❌ RAG Engine not available', 3000);
-							button.setButtonText('Clear & Rebuild');
-							button.setDisabled(false);
 							return;
 						}
 
+						button.setButtonText('Rebuilding...');
+						button.setDisabled(true);
+
 						try {
-							// Delete the vectorstore.json file
-							const pluginFolderName = this.plugin.manifest.dir || this.plugin.manifest.id;
-							const storePath = `${this.plugin.app.vault.configDir}/plugins/${pluginFolderName}/vectorstore.json`;
-							const fileExists = await this.plugin.app.vault.adapter.exists(storePath);
-
-							if (fileExists) {
-								console.log('🗑️ Deleting vector store file:', storePath);
-								await this.plugin.app.vault.adapter.remove(storePath);
-								console.log('✅ Vector store file deleted');
-							} else {
-								console.log('ℹ️ No vector store file to delete');
-							}
-
-							new Notice('🔄 Rebuilding vector store...', 3000);
-
-							// Clear and rebuild with new schema
-							button.setButtonText('Rebuilding...');
-							await ragEngine.rebuild();
-
+							new Notice('🔄 Rebuilding vector store from scratch...', 3000);
+							await this.plugin.ragEngine.rebuild();
 							console.log('✅ Rebuild complete');
 							new Notice('✅ Vector store rebuilt successfully!', 5000);
 						} catch (error) {
 							console.error('❌ Rebuild failed:', error);
 							new Notice('❌ Error: ' + (error as Error).message, 5000);
+						} finally {
+							// Always restore button state
+							button.setButtonText('Clear & Rebuild');
+							button.setDisabled(false);
 						}
-
-						button.setButtonText('Clear & Rebuild');
-						button.setDisabled(false);
 					})
 			);
 
@@ -560,18 +540,25 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 					.setButtonText('Rebuild Now')
 					.setCta()
 					.onClick(async () => {
+						if (!this.plugin.ragEngine) {
+							new Notice('❌ RAG Engine not available', 3000);
+							return;
+						}
+
 						button.setButtonText('Rebuilding...');
 						button.setDisabled(true);
 
 						try {
-							await ragEngine?.rebuild();
+							await this.plugin.ragEngine.rebuild();
 							new Notice('✅ Vector store rebuilt successfully!', 5000);
 						} catch (error) {
-							new Notice('Error: ' + (error as Error).message, 5000);
+							console.error('❌ Rebuild failed:', error);
+							new Notice('❌ Error: ' + (error as Error).message, 5000);
+						} finally {
+							// Always restore button state
+							button.setButtonText('Rebuild Now');
+							button.setDisabled(false);
 						}
-
-						button.setButtonText('Rebuild Now');
-						button.setDisabled(false);
 					})
 			);
 
@@ -581,7 +568,11 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 			.setDesc('View detailed information about the vector store')
 			.addButton((button) =>
 				button.setButtonText('Show Info').onClick(async () => {
-					const info = await ragEngine?.vectorStore.exportInfo();
+					if (!this.plugin.ragEngine) {
+						new Notice('❌ RAG Engine not available', 3000);
+						return;
+					}
+					const info = await this.plugin.ragEngine.vectorStore.exportInfo();
 					new Notice(info || 'Vector store not ready', 10000);
 					console.log(info);
 				})

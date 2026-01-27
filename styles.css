@@ -556,6 +556,10 @@
 	border-radius: 12px;
 	line-height: 1.6;
 	word-wrap: break-word;
+	user-select: text;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
 }
 
 /* User message - aligned right, blue accent */
