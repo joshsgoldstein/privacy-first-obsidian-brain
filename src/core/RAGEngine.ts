@@ -483,6 +483,11 @@ export class RAGEngine {
 		// Check if provider actually changed (by comparing settings, not objects)
 		const providerChanged = oldProvider !== settings.activeProvider;
 
+		// Always reconfigure provider with new settings (catches model/url changes within same provider)
+		if (!providerChanged) {
+			this.provider.configure(settings);
+		}
+
 		if (providerChanged) {
 			console.log(`Provider changed from ${oldProvider} to ${settings.activeProvider}`);
 

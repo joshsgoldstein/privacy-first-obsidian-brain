@@ -134,17 +134,22 @@ export class OllamaProvider extends BaseFullProvider {
 			: this.formatPrompt(this.getDefaultSystemPrompt(), context, prompt);
 
 		try {
-			const response = await fetch(`${this.baseUrl}/api/generate`, {
+			// Use /api/chat so instruct/chat models apply their proper chat template.
+			// Pass the rendered prompt as system and the question as the user turn.
+			const response = await fetch(`${this.baseUrl}/api/chat`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
 					model: this.model,
-					prompt: fullPrompt,
+					messages: [
+						{ role: 'system', content: fullPrompt },
+						{ role: 'user', content: prompt },
+					],
 					temperature: options?.temperature ?? this.temperature,
 					stream: true,
-					think: false, // Disable thinking tokens for qwen3 and other reasoning models
+					think: false,
 				}),
 			});
 
@@ -152,15 +157,12 @@ export class OllamaProvider extends BaseFullProvider {
 				throw new Error(`Ollama API error: ${response.statusText}`);
 			}
 
-			// Read streaming response
 			const reader = response.body?.getReader();
-			if (!reader) {
-				throw new Error('No response body');
-			}
+			if (!reader) throw new Error('No response body');
 
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let inThinkBlock = false; // Track <think> blocks from reasoning models
+			let inThinkBlock = false;
 
 			while (true) {
 				const { done, value } = await reader.read();
@@ -176,9 +178,10 @@ export class OllamaProvider extends BaseFullProvider {
 
 					try {
 						const data = JSON.parse(line);
-						if (data.response) {
-							// Strip <think>...</think> blocks that reasoning models emit
-							let text = data.response;
+						// /api/chat streams content via message.content
+						const text_raw = data.message?.content ?? '';
+						if (text_raw) {
+							let text = text_raw;
 							if (text.includes('<think>')) inThinkBlock = true;
 							if (inThinkBlock) {
 								if (text.includes('</think>')) {
