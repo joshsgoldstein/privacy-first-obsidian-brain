@@ -144,6 +144,7 @@ export class OllamaProvider extends BaseFullProvider {
 					prompt: fullPrompt,
 					temperature: options?.temperature ?? this.temperature,
 					stream: true,
+					think: false, // Disable thinking tokens for qwen3 and other reasoning models
 				}),
 			});
 
@@ -159,17 +160,16 @@ export class OllamaProvider extends BaseFullProvider {
 
 			const decoder = new TextDecoder();
 			let buffer = '';
+			let inThinkBlock = false; // Track <think> blocks from reasoning models
 
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) break;
 
-				// Decode chunk and add to buffer
 				buffer += decoder.decode(value, { stream: true });
 
-				// Process complete lines
 				const lines = buffer.split('\n');
-				buffer = lines.pop() || ''; // Keep incomplete line in buffer
+				buffer = lines.pop() || '';
 
 				for (const line of lines) {
 					if (!line.trim()) continue;
@@ -177,13 +177,21 @@ export class OllamaProvider extends BaseFullProvider {
 					try {
 						const data = JSON.parse(line);
 						if (data.response) {
-							yield data.response;
+							// Strip <think>...</think> blocks that reasoning models emit
+							let text = data.response;
+							if (text.includes('<think>')) inThinkBlock = true;
+							if (inThinkBlock) {
+								if (text.includes('</think>')) {
+									inThinkBlock = false;
+									text = text.split('</think>').pop() || '';
+								} else {
+									continue;
+								}
+							}
+							if (text) yield text;
 						}
 
-						// Check if done
-						if (data.done) {
-							return;
-						}
+						if (data.done) return;
 					} catch (e) {
 						console.error('Failed to parse Ollama response line:', line, e);
 					}
