@@ -162,8 +162,8 @@ export class PromptManager {
 	 * Parse markdown prompt file with frontmatter
 	 */
 	private parsePrompt(content: string): ParsedPrompt {
-		// Match frontmatter: ---\n...yaml...\n---
-		const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+		// Match frontmatter: ---\r?\n...yaml...\r?\n---\r?\n
+		const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 		const match = content.match(frontmatterRegex);
 
 		if (!match) {

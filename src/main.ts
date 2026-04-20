@@ -41,7 +41,15 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		const pluginFolderName = this.manifest.dir || this.manifest.id;
 		const pluginDir = `${this.app.vault.configDir}/plugins/${pluginFolderName}`;
 		this.ragEngine = new RAGEngine(this.app, this.settings, pluginDir);
-		await this.ragEngine.initialize();
+		try {
+			await this.ragEngine.initialize();
+		} catch (error) {
+			console.error('Smart Second Brain: Failed to initialize RAG engine:', error);
+			new Notice(
+				'Smart Second Brain: Could not connect to AI provider. Check Settings to configure your provider.',
+				10000
+			);
+		}
 
 		// Show rebuild notice if needed
 		if (needsRebuild) {
@@ -162,7 +170,11 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		// Auto-save vector store every 5 minutes
 		this.registerInterval(
 			window.setInterval(async () => {
-				await this.ragEngine.save();
+				try {
+					await this.ragEngine.save();
+				} catch (error) {
+					console.error('[AutoSave] Failed to save vector store:', error);
+				}
 			}, 5 * 60 * 1000) // 5 minutes
 		);
 
@@ -419,7 +431,12 @@ export default class SmartSecondBrainPlugin extends Plugin {
 			});
 
 			copyButton.addEventListener('click', () => {
-				navigator.clipboard.writeText(answer);
+				if (navigator.clipboard?.writeText) {
+					navigator.clipboard.writeText(answer).catch(err => console.error('Copy failed:', err));
+				} else {
+					// Fallback: show a notice with the text to copy manually
+					new Notice('Copy not supported on this platform', 3000);
+				}
 				new Notice('Answer copied to clipboard!');
 			});
 

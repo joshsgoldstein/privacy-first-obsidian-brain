@@ -219,7 +219,7 @@ export class OpikTracer implements BaseTracer {
 		}
 	}
 
-	updateSettings(settings: Settings): void {
+	async updateSettings(settings: Settings): Promise<void> {
 		const wasEnabled = this.enabled;
 		this.settings = settings;
 		this.enabled = settings.opikEnabled && !!settings.opikUrl;
@@ -228,7 +228,9 @@ export class OpikTracer implements BaseTracer {
 			console.log('✅ Opik tracer enabled with new settings');
 		} else if (!this.enabled && wasEnabled) {
 			// Flush any pending traces before disabling
-			this.flush();
+			this.enabled = true;     // re-enable so flush() doesn't short-circuit
+			await this.flush();
+			this.enabled = false;    // now actually disable
 		}
 	}
 

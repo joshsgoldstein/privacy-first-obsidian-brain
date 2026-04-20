@@ -138,6 +138,10 @@ export class ChatView extends ItemView {
 		this.updateStats();
 
 		// Update stats every 5 seconds
+		if (this.statsUpdateInterval !== null) {
+			window.clearInterval(this.statsUpdateInterval);
+			this.statsUpdateInterval = null;
+		}
 		this.statsUpdateInterval = window.setInterval(() => {
 			this.updateStats();
 		}, 5000);
@@ -850,8 +854,16 @@ export class ChatView extends ItemView {
 				await this.app.vault.createFolder(folder);
 			}
 
-			// Create the note
-			await this.app.vault.create(filePath, content);
+			// Check if file already exists; modify instead of create to avoid throwing
+			const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+			if (existingFile && existingFile instanceof TFile) {
+				await this.app.vault.modify(existingFile, content);
+			} else {
+				await this.app.vault.create(filePath, content);
+			}
+
+			// Track the saved file path so subsequent saves update the same file
+			this.currentChatFile = filePath;
 
 			// Show success message
 			new Notice(`✅ Chat saved to ${filePath}`);

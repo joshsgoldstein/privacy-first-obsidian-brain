@@ -477,7 +477,7 @@ export class RAGEngine {
 		// Update all components
 		this.documentLoader.updateSettings(settings);
 		this.vectorStore.updateSettings(settings);
-		this.tracer.updateSettings(settings);
+		await this.tracer.updateSettings(settings);
 		this.promptManager.updateSettings(settings);
 
 		// Check if provider actually changed (by comparing settings, not objects)
@@ -504,8 +504,13 @@ export class RAGEngine {
 				console.error('Provider error:', error);
 				new Notice('Selected provider not available. Reverting to Ollama.', 5000);
 				this.settings.activeProvider = 'ollama';
-				const fallbackProvider = createProvider(this.settings);
-				this.provider = fallbackProvider;
+				this.provider = createProvider(this.settings);
+				this.vectorStore = new VectorStore(this.provider, this.settings, this.dataPath);
+				try {
+					await this.vectorStore.initialize();
+				} catch (e) {
+					console.error('Fallback VectorStore init failed:', e);
+				}
 			}
 		} else {
 			// Same provider, just settings changed - no need to reinitialize
@@ -557,6 +562,11 @@ export class RAGEngine {
 	 * Clear all data and reinitialize
 	 */
 	async rebuild(): Promise<void> {
+		if (this.isIndexing) {
+			new Notice('Already indexing. Please wait before rebuilding.', 3000);
+			return;
+		}
+
 		console.log('🔄 Starting rebuild...');
 
 		const vectorStorePath = `${this.dataPath}/vectorstore.json`;

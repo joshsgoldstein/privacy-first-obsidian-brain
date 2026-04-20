@@ -71,5 +71,5 @@ export interface BaseTracer {
 	/**
 	 * Update tracer settings (called when user changes settings)
 	 */
-	updateSettings(settings: Settings): void;
+	updateSettings(settings: Settings): void | Promise<void>;
 }

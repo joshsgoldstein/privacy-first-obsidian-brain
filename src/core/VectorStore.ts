@@ -255,7 +255,7 @@ export class VectorStore {
 				limit: 1000, // Should be enough for any document
 			});
 
-			return results.hits.map((hit: any) => hit.document);
+			return results.hits.map((hit: any) => hit.document).filter((doc: any) => doc.path === path);
 		} catch (error) {
 			return [];
 		}
@@ -373,7 +373,12 @@ export class VectorStore {
 				});
 			} else {
 				// Hybrid search (combines both)
-				const queryEmbedding = await this.embeddings.embed(query);
+				let queryEmbedding;
+				try {
+					queryEmbedding = await this.embeddings.embed(query);
+				} catch (error) {
+					console.warn('⚠️ Failed to generate embedding for hybrid search, falling back to fulltext:', error);
+				}
 
 				if (!queryEmbedding || queryEmbedding.length === 0) {
 					console.error('Failed to generate embedding for query:', query);
@@ -482,8 +487,14 @@ export class VectorStore {
 			const data = await save(this.db);
 			const jsonData = JSON.stringify(data);
 
-			// Write to file using Obsidian's adapter
+			const tmpPath = this.storePath + '.tmp';
+			await fs.adapter.write(tmpPath, jsonData);
+			const tmpExists = await fs.adapter.exists(tmpPath);
+			if (!tmpExists) {
+				throw new Error('Failed to verify tmp file after write');
+			}
 			await fs.adapter.write(this.storePath, jsonData);
+			await fs.adapter.remove(tmpPath);
 
 			console.log(`✅ Vector store saved successfully to ${this.storePath}`);
 
@@ -505,17 +516,24 @@ export class VectorStore {
 			console.log(`🔍 Attempting to load vector store from: ${this.storePath}`);
 
 			// Check if file exists
-			const exists = await fs.adapter.exists(this.storePath);
+			let exists = await fs.adapter.exists(this.storePath);
 			console.log(`📂 File exists: ${exists}`);
 
 			if (!exists) {
-				console.log('❌ Vector store file not found, will need to index');
-				return false;
+				const tmpExists = await fs.adapter.exists(this.storePath + '.tmp');
+				if (tmpExists) {
+					console.log('⚠️ Main file missing but .tmp found, recovering from tmp');
+					exists = true;
+				} else {
+					console.log('❌ Vector store file not found, will need to index');
+					return false;
+				}
 			}
 
 			// Read data
 			console.log('📖 Reading vector store file...');
-			const jsonData = await fs.adapter.read(this.storePath);
+			const readPath = (await fs.adapter.exists(this.storePath)) ? this.storePath : this.storePath + '.tmp';
+			const jsonData = await fs.adapter.read(readPath);
 			const data = JSON.parse(jsonData);
 			console.log('✅ Vector store data parsed successfully');
 
@@ -650,9 +668,10 @@ export class VectorStore {
 		console.log('🗑️ Clearing vector store...');
 
 		// Reinitialize to create fresh empty database
+		this.db = null;
 		this.isInitialized = false;
-		await this.initialize();
 		this.documentCount = 0;
+		await this.initialize();
 
 		console.log('✅ Vector store cleared (in-memory)');
 

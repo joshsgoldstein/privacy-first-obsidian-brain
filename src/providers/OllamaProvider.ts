@@ -272,16 +272,11 @@ export class OllamaProvider extends BaseFullProvider {
 	 * MUST call fetchDimensions() first to populate cache
 	 */
 	getDimensions(): number {
-		// Return cached value if available
 		if (this.cachedDimensions !== null) {
 			return this.cachedDimensions;
 		}
-
-		// No static fallback - throw error to make it clear dimensions must be fetched
-		throw new Error(
-			`Embedding dimensions not fetched for model "${this.embeddingModel}". ` +
-			`Call fetchDimensions() first or check if model is running.`
-		);
+		console.warn('[OllamaProvider] getDimensions() called before fetchDimensions(). Returning fallback 768.');
+		return 768;
 	}
 
 	/**

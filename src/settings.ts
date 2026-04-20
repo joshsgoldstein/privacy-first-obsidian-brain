@@ -70,6 +70,8 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 	private ollamaModels: string[] = [];
 	private ollamaEmbeddingModels: string[] = [];
 	private statusInterval: number | null = null;
+	private ollamaUrlDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private isInitialModelLoad = true;
 
 	constructor(app: App, plugin: SmartSecondBrainPlugin) {
 		super(app, plugin);
@@ -82,6 +84,11 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 			window.clearInterval(this.statusInterval);
 			this.statusInterval = null;
 		}
+		if (this.ollamaUrlDebounceTimer) {
+			clearTimeout(this.ollamaUrlDebounceTimer);
+			this.ollamaUrlDebounceTimer = null;
+			this.plugin.saveSettings().catch(console.error);
+		}
 	}
 
 	async display(): Promise<void> {
@@ -93,10 +100,12 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 
 		// Load Ollama models in background (non-blocking)
 		if (this.plugin.settings.activeProvider === 'ollama' && this.ollamaModels.length === 0) {
+			const skipRefresh = this.isInitialModelLoad;
+			this.isInitialModelLoad = false;
 			this.loadOllamaModels().then(() => {
-				// Silently refresh dropdowns after models load
-				// Only if we're still on Ollama provider
-				if (this.plugin.settings.activeProvider === 'ollama') {
+				// Only re-render if this wasn't the initial load (avoids stealing
+				// focus from text inputs on mobile while the user may be editing)
+				if (!skipRefresh && this.plugin.settings.activeProvider === 'ollama') {
 					this.display();
 				}
 			});
@@ -137,9 +146,16 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 					text
 						.setPlaceholder('http://localhost:11434')
 						.setValue(this.plugin.settings.ollamaUrl)
-						.onChange(async (value) => {
+						.onChange((value) => {
 							this.plugin.settings.ollamaUrl = value;
-							await this.plugin.saveSettings();
+							// Debounce the save so it doesn't fire on every keystroke,
+							// which causes issues on mobile (lag, focus loss)
+							if (this.ollamaUrlDebounceTimer) {
+								clearTimeout(this.ollamaUrlDebounceTimer);
+							}
+							this.ollamaUrlDebounceTimer = setTimeout(async () => {
+								await this.plugin.saveSettings();
+							}, 500);
 						})
 				)
 				.addButton((button) =>

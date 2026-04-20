@@ -49,7 +49,8 @@ export class DocumentLoader {
 
 		try {
 			// Read file content
-			const content = await this.app.vault.read(file);
+			let content = await this.app.vault.read(file);
+			content = content.replace(/\r\n/g, '\n');
 
 			// Get metadata cache
 			const cache = this.app.metadataCache.getFileCache(file);
@@ -133,8 +134,8 @@ export class DocumentLoader {
 	 * Remove YAML frontmatter from content
 	 */
 	private removeFrontmatter(content: string): string {
-		// Match frontmatter: ---\n...\n---
-		const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
+		// Match frontmatter: ---\r?\n...\r?\n---\r?\n
+		const frontmatterRegex = /^---\r?\n[\s\S]*?\r?\n---\r?\n/;
 		return content.replace(frontmatterRegex, '').trim();
 	}
 
