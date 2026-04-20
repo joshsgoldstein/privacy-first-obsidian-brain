@@ -145,7 +145,9 @@ export class OllamaProvider extends BaseFullProvider {
 					model: this.model,
 					messages: [
 						{ role: 'system', content: fullPrompt },
-						{ role: 'user', content: prompt },
+						// /no_think disables reasoning tokens for qwen3 and compatible models;
+						// non-qwen3 models silently ignore it
+						{ role: 'user', content: prompt + '\n/no_think' },
 					],
 					temperature: options?.temperature ?? this.temperature,
 					stream: true,
