@@ -135,7 +135,11 @@ export class AnthropicProvider extends BaseFullProvider {
 		options?: GenerateOptions
 	): AsyncGenerator<string, void, unknown> {
 		const systemPrompt = options?.systemPrompt || this.getDefaultSystemPrompt();
-		const fullPrompt = this.formatPrompt('', context, prompt);
+		// When a pre-rendered systemPrompt is provided it already contains context and
+		// history — send just the raw question as the user turn to avoid duplication.
+		const fullPrompt = options?.systemPrompt
+			? prompt
+			: this.formatPrompt('', context, prompt);
 
 		try {
 			const response = await fetch(`${this.baseUrl}/messages`, {

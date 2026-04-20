@@ -126,8 +126,12 @@ export class OllamaProvider extends BaseFullProvider {
 		context: string,
 		options?: GenerateOptions
 	): AsyncGenerator<string, void, unknown> {
-		const systemPrompt = options?.systemPrompt || this.getDefaultSystemPrompt();
-		const fullPrompt = this.formatPrompt(systemPrompt, context, prompt);
+		// If a pre-rendered prompt is provided (from PromptManager), use it directly —
+		// it already contains context, question, and instructions. Wrapping it again
+		// via formatPrompt would duplicate context and question, confusing the model.
+		const fullPrompt = options?.systemPrompt
+			? options.systemPrompt
+			: this.formatPrompt(this.getDefaultSystemPrompt(), context, prompt);
 
 		try {
 			const response = await fetch(`${this.baseUrl}/api/generate`, {

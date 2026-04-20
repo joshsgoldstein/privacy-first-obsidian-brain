@@ -102,9 +102,14 @@ export class OpenAIProvider extends BaseFullProvider {
 		options?: GenerateOptions
 	): AsyncGenerator<string, void, unknown> {
 		const systemPrompt = options?.systemPrompt || this.getDefaultSystemPrompt();
+		// When a pre-rendered systemPrompt is provided it already contains context and
+		// history — send just the raw question as the user turn to avoid duplication.
+		const userMessage = options?.systemPrompt
+			? prompt
+			: this.formatPrompt('', context, prompt);
 		const messages = [
 			{ role: 'system', content: systemPrompt },
-			{ role: 'user', content: this.formatPrompt('', context, prompt) },
+			{ role: 'user', content: userMessage },
 		];
 
 		try {
