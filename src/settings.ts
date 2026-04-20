@@ -141,10 +141,10 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 			// Ollama URL with reload button
 			new Setting(containerEl)
 				.setName('Ollama URL')
-				.setDesc('URL of your Ollama server (default: http://localhost:11434)')
+				.setDesc('URL of your Ollama server. Use http://localhost:11434 for local, or your server IP (e.g. http://192.168.1.x:11434) for remote.')
 				.addText((text) =>
 					text
-						.setPlaceholder('http://localhost:11434')
+						.setPlaceholder('http://192.168.1.x:11434')
 						.setValue(this.plugin.settings.ollamaUrl)
 						.onChange((value) => {
 							this.plugin.settings.ollamaUrl = value;
@@ -155,6 +155,11 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 							}
 							this.ollamaUrlDebounceTimer = setTimeout(async () => {
 								await this.plugin.saveSettings();
+								// Auto-reload models from the new URL
+								this.ollamaModels = [];
+								this.ollamaEmbeddingModels = [];
+								await this.loadOllamaModels();
+								this.display();
 							}, 500);
 						})
 				)
