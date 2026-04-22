@@ -844,7 +844,7 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 			const response = await fetch(`${this.plugin.settings.ollamaUrl}/api/tags`);
 
 			if (!response.ok) {
-				console.error('Failed to fetch Ollama models');
+				new Notice(`Cannot reach Ollama at ${this.plugin.settings.ollamaUrl} — check the URL in settings.`, 6000);
 				return;
 			}
 
@@ -908,13 +908,27 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 				}
 			}
 
-			// Always add current selections if not in list
+			// If saved model isn't on the server, auto-correct to first available
 			if (!this.ollamaModels.includes(this.plugin.settings.ollamaModel)) {
-				this.ollamaModels.unshift(this.plugin.settings.ollamaModel);
+				const first = this.ollamaModels[0];
+				if (first) {
+					new Notice(`Model '${this.plugin.settings.ollamaModel}' not found. Switching to '${first}'.`, 5000);
+					this.plugin.settings.ollamaModel = first;
+					await this.plugin.saveSettings();
+				} else {
+					this.ollamaModels.unshift(this.plugin.settings.ollamaModel);
+				}
 			}
 
 			if (!this.ollamaEmbeddingModels.includes(this.plugin.settings.ollamaEmbeddingModel)) {
-				this.ollamaEmbeddingModels.unshift(this.plugin.settings.ollamaEmbeddingModel);
+				const first = this.ollamaEmbeddingModels[0];
+				if (first) {
+					new Notice(`Embedding model '${this.plugin.settings.ollamaEmbeddingModel}' not found. Switching to '${first}'.`, 5000);
+					this.plugin.settings.ollamaEmbeddingModel = first;
+					await this.plugin.saveSettings();
+				} else {
+					this.ollamaEmbeddingModels.unshift(this.plugin.settings.ollamaEmbeddingModel);
+				}
 			}
 
 			if (this.plugin.settings.verboseLogging) {
@@ -922,6 +936,7 @@ export class SmartSecondBrainSettingTab extends PluginSettingTab {
 				console.log('Embedding models:', this.ollamaEmbeddingModels);
 			}
 		} catch (error) {
+			new Notice(`Cannot reach Ollama at ${this.plugin.settings.ollamaUrl} — check the URL in settings.`, 6000);
 			console.error('Error loading Ollama models:', error);
 		}
 	}
