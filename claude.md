@@ -1,6 +1,6 @@
 # Claude Context - Smart Second Brain Plugin
 
-**Date:** 2026-01-12
+**Date:** 2026-01-28
 **Working Directory:** `/Users/joshgoldstein/Documents/lab/notes-meeting-agent/test-vault/.obsidian/plugins/obsidian-sample-plugin`
 **Plugin Name:** Smart Second Brain
 **Version:** 1.3.0
@@ -22,7 +22,31 @@ A production-ready RAG (Retrieval-Augmented Generation) plugin for Obsidian that
 
 ---
 
-## Recent Session (2026-01-12)
+## Session (2026-04-21)
+
+### Issues Fixed
+1. **Plugin crashed silently on load when Ollama offline** - Wrapped `initialize()` in try/catch; plugin now loads in degraded mode instead of failing silently
+2. **RAG context sent twice to LLM** - `renderedPrompt` already contained context + question; `formatPrompt()` was wrapping it again, causing the model to ignore notes and answer from general knowledge
+3. **OllamaProvider used /api/generate instead of /api/chat** - Text completion endpoint prevented instruct models from following system prompt instructions; switched to `/api/chat`
+4. **Model changes in settings had no effect** - `provider.configure()` was never called on same-provider settings updates; now called on every settings save
+5. **qwen3 `<think>` tokens streamed into chat UI** - Added `think:false` API flag, stateful stream filter, and `/no_think` suffix on user messages
+6. **12 additional stability fixes** - Atomic VectorStore saves, `getDocumentChunks` exact match, concurrent rebuild guard, interval leaks, `saveChat` crash on second save, debounce flush on settings close, CRLF support, hybrid search embedding guard, OpikTracer flush await, clipboard mobile guard
+7. **Ollama URL change now auto-reloads model list** - No manual "Reload Models" click needed; model list refreshes automatically on URL change
+8. **Deployed to iCloud vault** - Deployed as `smart-second-brain` folder for mobile access
+
+---
+
+## Recent Session (2026-01-28)
+
+### Issues Fixed
+1. **Ollama URL uneditable on mobile** - `onChange` fired on every keystroke causing disk saves and lag; initial model load called `this.display()` which rebuilt the UI and stole focus/dismissed keyboard
+   - Debounced URL save (500ms after last keystroke)
+   - Skipped `this.display()` on initial automatic model load to prevent focus loss
+   - Timer cleanup on settings close
+
+---
+
+## Session (2026-01-12)
 
 ### Issues Fixed
 1. **Prompt files being indexed** - Added `Prompts/**` to default exclusions with migration
@@ -71,6 +95,7 @@ nothing to commit, working tree clean
 
 ### Latest Commits
 ```
+4295b2b Auto-reload models after Ollama URL change + better URL hint
 3e6a8fc Fix double path bug in plugin directory resolution
 b46cf9d Sync SearchModal with RAG search config and add detailed logging
 17b923c Add hybrid search weights and fix vectorstore saving
@@ -159,7 +184,9 @@ Answer:
 
 ## Known Issues / Tech Debt
 
-None currently! All major issues fixed this session.
+- **VectorStore tightly coupled to Orama** - Not swappable without a full rewrite; should extract a `VectorStoreInterface` abstraction
+- **Settings is a flat monolithic struct** - All providers mixed together; adding a new provider requires editing the `Settings` type in 3 places
+- **RAGEngine.getModelName() hardcodes a switch per provider** - Violates open/closed principle; each new provider requires modifying this method
 
 ---
 

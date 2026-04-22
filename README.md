@@ -68,6 +68,7 @@ The plugin searches your vault, retrieves relevant context, and uses AI to gener
 - **Completely offline** – No data leaves your machine
 - **Free forever** – No API costs
 - **Models**: llama3, mistral, phi, gemma, qwen
+- **Reasoning models supported** – qwen3 and other models that emit `<think>` blocks are handled automatically: thinking tokens are filtered and `/no_think` is appended to prompts so you see clean answers
 - **Embeddings**: snowflake-arctic-embed, nomic-embed-text
 - **No API key required**
 
@@ -373,7 +374,7 @@ The plugin offers three search approaches. You can switch between them in **Sett
 | Setting | Description |
 |---------|-------------|
 | **Active Provider** | Choose: Ollama (local), OpenAI, or Anthropic |
-| **Ollama URL** | Default: `http://localhost:11434` |
+| **Ollama URL** | Default: `http://localhost:11434` — changing this value automatically reloads the available model list |
 | **API Keys** | OpenAI key or Anthropic + Voyage keys |
 | **Generation Model** | LLM for generating answers (e.g., `llama3`, `gpt-4o`, `claude-3-5-sonnet`) |
 | **Embedding Model** | Model for semantic search (e.g., `snowflake-arctic-embed:335m`, `text-embedding-3-small`) |
@@ -384,7 +385,7 @@ The plugin offers three search approaches. You can switch between them in **Sett
 | Setting | Range | Default | Description |
 |---------|-------|---------|-------------|
 | **Search Mode** | fulltext / vector / hybrid | hybrid | How to search your notes |
-| **Similarity Threshold** | 0-1 | 0.8 | Minimum score for vector search (lower = more results) |
+| **Similarity Threshold** | 0-1 | 0.3 | Minimum score for vector search (lower = more results) |
 | **Fulltext Threshold** | 0-1 | 0.0 | Minimum score for BM25 search |
 | **Top-K Results** | 1-20 | 5 | Number of documents to retrieve per query |
 | **Temperature** | 0-2 | 0.7 | LLM creativity (0 = precise, 2 = creative) |
@@ -402,7 +403,7 @@ The plugin offers three search approaches. You can switch between them in **Sett
 
 | Setting | Description |
 |---------|-------------|
-| **Index Status** | Live document count (updates every 2 seconds) |
+| **Index Status** | Live document count (settings panel polls every 2 seconds; main status bar updates every 5 seconds) |
 | **Clear & Rebuild Index** | Deletes vector store and rebuilds from scratch (use when switching embedding models) |
 | **Quick Rebuild** | Re-indexes without clearing (faster, use after adding many notes) |
 
@@ -654,6 +655,7 @@ The plugin follows a modular architecture with clear separation of concerns:
 - Implements BM25, vector, and hybrid search algorithms
 - Auto-detects dimension mismatches when switching models
 - Persists to `vectorstore.json` for instant loading
+- Saves are atomic: data is written to a `.tmp` file first, then moved to the final path, preventing corruption on interrupted writes
 
 **DocumentLoader** (`src/core/DocumentLoader.ts`)
 - Loads markdown files from vault
@@ -1016,6 +1018,7 @@ You are a helpful AI assistant...
 - [x] Save individual responses as notes
 - [x] Persistent chat sidebar interface
 - [x] Auto-save conversations
+- [x] **Mobile support** (iOS/Android – `isDesktopOnly: false`, iCloud deployment, keyboard/debounce fixes)
 
 ### ⚙️ Phase 3 - Advanced Features (IN PROGRESS)
 - [x] **Custom prompt templates** with variable substitution
@@ -1027,7 +1030,6 @@ You are a helpful AI assistant...
 - [ ] Batch operations and optimizations
 
 ### 🔮 Future Ideas
-- [ ] **Mobile support** (iOS/Android compatibility)
 - [ ] **Graph view integration** (show related notes visually)
 - [ ] **Voice input** for questions
 - [ ] **Suggested questions** based on recent edits

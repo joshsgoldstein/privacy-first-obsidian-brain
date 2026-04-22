@@ -73,88 +73,90 @@ Here's why:
 
 ## Phase 1: Build Order (Recommended)
 
+> ✅ Phase 1 Complete as of v1.3.0
+
 ### Step 1: Project Setup (30 min)
-- [ ] Rename plugin to "Smart Second Brain"
-- [ ] Update manifest.json
-- [ ] Install dependencies (Orama, nanoid)
-- [ ] Update package.json scripts
-- [ ] Create folder structure (`src/core/`, `src/providers/`, etc.)
+- [x] Rename plugin to "Smart Second Brain"
+- [x] Update manifest.json
+- [x] Install dependencies (Orama, nanoid)
+- [x] Update package.json scripts
+- [x] Create folder structure (`src/core/`, `src/providers/`, etc.)
 
 ### Step 2: Types & Interfaces (30 min)
-- [ ] Create `src/types/index.ts` with all TypeScript interfaces
-- [ ] Define Message, Settings, Provider interfaces
-- [ ] No implementation yet, just types
+- [x] Create `src/types/index.ts` with all TypeScript interfaces
+- [x] Define Message, Settings, Provider interfaces
+- [x] No implementation yet, just types
 
 ### Step 3: Settings (1 hour)
-- [ ] Create `src/settings.ts` with Settings tab UI
-- [ ] Add provider selection (Ollama, OpenAI, Anthropic)
-- [ ] Add API key inputs
-- [ ] Add RAG parameters (topK, similarity threshold)
-- [ ] Test: Settings save and load correctly
+- [x] Create `src/settings.ts` with Settings tab UI
+- [x] Add provider selection (Ollama, OpenAI, Anthropic)
+- [x] Add API key inputs
+- [x] Add RAG parameters (topK, similarity threshold)
+- [x] Test: Settings save and load correctly
 
 ### Step 4: Provider - Ollama Only (2 hours)
-- [ ] Create `src/providers/BaseProvider.ts` interface
-- [ ] Create `src/providers/OllamaProvider.ts`
-- [ ] Implement embedding (call Ollama API)
-- [ ] Implement generation (streaming)
-- [ ] Test: Can call Ollama locally
+- [x] Create `src/providers/BaseProvider.ts` interface
+- [x] Create `src/providers/OllamaProvider.ts`
+- [x] Implement embedding (call Ollama API)
+- [x] Implement generation (streaming)
+- [x] Test: Can call Ollama locally
 
 ### Step 5: Document Loader (1 hour)
-- [ ] Create `src/core/DocumentLoader.ts`
-- [ ] Load all markdown files from vault
-- [ ] Filter excluded patterns
-- [ ] Parse frontmatter
-- [ ] Test: Loads your test vault notes
+- [x] Create `src/core/DocumentLoader.ts`
+- [x] Load all markdown files from vault
+- [x] Filter excluded patterns
+- [x] Parse frontmatter
+- [x] Test: Loads your test vault notes
 
 ### Step 6: Vector Store (2 hours)
-- [ ] Create `src/core/VectorStore.ts`
-- [ ] Integrate Orama
-- [ ] Add documents with embeddings
-- [ ] Similarity search
-- [ ] Save/load from disk
-- [ ] Test: Can search and find similar notes
+- [x] Create `src/core/VectorStore.ts`
+- [x] Integrate Orama
+- [x] Add documents with embeddings
+- [x] Similarity search
+- [x] Save/load from disk
+- [x] Test: Can search and find similar notes
 
 ### Step 7: RAG Engine (2 hours)
-- [ ] Create `src/core/RAGEngine.ts`
-- [ ] Combine: embed query → search → generate
-- [ ] Streaming response
-- [ ] Return sources
-- [ ] Test: End-to-end RAG pipeline works
+- [x] Create `src/core/RAGEngine.ts`
+- [x] Combine: embed query → search → generate
+- [x] Streaming response
+- [x] Return sources
+- [x] Test: End-to-end RAG pipeline works
 
 ### Step 8: Chat UI (3 hours)
-- [ ] Create `src/ui/ChatView.ts`
-- [ ] Message list rendering
-- [ ] Input field with send button
-- [ ] Streaming response display
-- [ ] Source links (clickable)
-- [ ] Test: Can chat and see sources
+- [x] Create `src/ui/ChatView.ts`
+- [x] Message list rendering
+- [x] Input field with send button
+- [x] Streaming response display
+- [x] Source links (clickable)
+- [x] Test: Can chat and see sources
 
 ### Step 9: Main Plugin Integration (1 hour)
-- [ ] Update `src/main.ts`
-- [ ] Initialize RAGEngine on load
-- [ ] Register ChatView
-- [ ] Add ribbon icon
-- [ ] Add command to open chat
-- [ ] Test: Full plugin works end-to-end
+- [x] Update `src/main.ts`
+- [x] Initialize RAGEngine on load
+- [x] Register ChatView
+- [x] Add ribbon icon
+- [x] Add command to open chat
+- [x] Test: Full plugin works end-to-end
 
 ### Step 10: Vault Sync (1 hour)
-- [ ] Listen to file changes (create, edit, delete)
-- [ ] Update vector store incrementally
-- [ ] Debounced auto-save
-- [ ] Test: Edits to notes update the index
+- [x] Listen to file changes (create, edit, delete)
+- [x] Update vector store incrementally
+- [x] Debounced auto-save
+- [x] Test: Edits to notes update the index
 
 ### Step 11: Additional Providers (2 hours each)
-- [ ] Create `src/providers/OpenAIProvider.ts`
-- [ ] Create `src/providers/AnthropicProvider.ts`
-- [ ] Test: Can switch providers in settings
+- [x] Create `src/providers/OpenAIProvider.ts`
+- [x] Create `src/providers/AnthropicProvider.ts`
+- [x] Test: Can switch providers in settings
 
 ### Step 12: Polish (2-4 hours)
-- [ ] Error handling
-- [ ] Loading indicators
-- [ ] Empty states
-- [ ] CSS styling
-- [ ] Onboarding modal (optional)
-- [ ] Test: UX feels good
+- [x] Error handling
+- [x] Loading indicators
+- [x] Empty states
+- [x] CSS styling
+- [x] Onboarding modal (optional)
+- [x] Test: UX feels good
 
 **Total estimated time: 20-25 hours**
 
