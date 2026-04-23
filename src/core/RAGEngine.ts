@@ -483,9 +483,36 @@ export class RAGEngine {
 		// Check if provider actually changed (by comparing settings, not objects)
 		const providerChanged = oldProvider !== settings.activeProvider;
 
-		// Always reconfigure provider with new settings (catches model/url changes within same provider)
+		// Always reconfigure provider with new settings (catches model/url changes within same provider).
+		// Must pass a proper ProviderConfig (not raw Settings), matching what createProvider() does.
 		if (!providerChanged) {
-			this.provider.configure(settings);
+			switch (settings.activeProvider) {
+				case 'ollama':
+					this.provider.configure({
+						baseUrl: settings.ollamaUrl,
+						model: settings.ollamaModel,
+						embeddingModel: settings.ollamaEmbeddingModel,
+						temperature: settings.temperature,
+					});
+					break;
+				case 'openai':
+					this.provider.configure({
+						apiKey: settings.openaiApiKey,
+						model: settings.openaiModel,
+						embeddingModel: settings.openaiEmbeddingModel,
+						temperature: settings.temperature,
+					});
+					break;
+				case 'anthropic':
+					this.provider.configure({
+						apiKey: settings.anthropicApiKey,
+						model: settings.anthropicModel,
+						embeddingApiKey: settings.voyageApiKey,
+						embeddingModel: settings.voyageEmbeddingModel,
+						temperature: settings.temperature,
+					});
+					break;
+			}
 		}
 
 		if (providerChanged) {

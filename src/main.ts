@@ -36,10 +36,8 @@ export default class SmartSecondBrainPlugin extends Plugin {
 		// Check if we need to suggest index rebuild (after settings migration)
 		const needsRebuild = await this.checkIfIndexNeedsRebuild();
 
-		// Initialize RAG Engine (configDir is already .obsidian, just need /plugins/pluginId)
-		// Get the actual plugin folder name from the manifest
-		const pluginFolderName = this.manifest.dir || this.manifest.id;
-		const pluginDir = `${this.app.vault.configDir}/plugins/${pluginFolderName}`;
+		// manifest.dir is already the full relative path (e.g. .obsidian/plugins/obsidian-sample-plugin)
+		const pluginDir = this.manifest.dir || `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
 		this.ragEngine = new RAGEngine(this.app, this.settings, pluginDir);
 		try {
 			await this.ragEngine.initialize();
